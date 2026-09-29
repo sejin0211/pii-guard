@@ -81,6 +81,32 @@ footer{border-top:1px solid var(--line);padding:22px 0 40px;color:var(--mut);fon
 .res .b{white-space:nowrap;flex-shrink:0}
 .drop{font-weight:400}.drop b{font-weight:700}
 .tips{margin:0;padding-left:18px;color:var(--mut);font-size:13.5px;display:grid;gap:6px}
+
+.ttl{all:unset;cursor:pointer;display:flex;align-items:center;flex-wrap:wrap;gap:10px;font-weight:700;font-size:17px}
+.ttl:focus-visible{outline:2px solid var(--brand);outline-offset:4px;border-radius:6px}
+.hint{font-size:12.5px;font-weight:600;color:var(--mut);border:1px solid var(--line);border-radius:99px;padding:2px 11px;display:inline-flex;gap:5px;align-items:center}
+.ttl:hover .hint{border-color:var(--brand);color:var(--ink)}
+.ttl[aria-expanded=true] .hint{background:var(--tok);color:var(--ink);border-color:transparent}
+.chev{display:inline-block;transition:transform .2s}
+.ttl[aria-expanded=true] .chev{transform:rotate(180deg)}
+.why{background:var(--tok);border-radius:10px;padding:16px 18px;margin:0 0 14px;font-size:14px}
+.why p{margin:8px 0}
+.why code{background:var(--card);padding:1px 6px;border-radius:5px;font-size:13px}
+.why ul{margin:8px 0 0;padding-left:18px;color:var(--mut);display:grid;gap:3px}
+.ex{display:grid;gap:6px;margin:12px 0}
+.ex>div{background:var(--card);border-radius:8px;padding:9px 12px}
+.ex small{display:block;color:var(--mut);font-size:12px}
+.ex .arrow{background:none;padding:0 4px;color:var(--mut);font-weight:600;font-size:13px}
+footer.site{background:#1f1410;color:#d9cfc9;border-top:0;padding:34px 0 30px;font-size:13px;margin-top:8px}
+footer.site .warn{margin:0 0 22px;color:#a99d96}
+footer.site .team{display:flex;flex-direction:column;align-items:center;gap:12px;padding:20px 0;border-top:1px solid #3a2a20;border-bottom:1px solid #3a2a20}
+footer.site .brand{display:flex;align-items:center;gap:9px;color:#fff;font-size:20px;letter-spacing:.02em}
+footer.site .brand b{font-weight:800}
+footer.site .brand svg{width:22px;height:22px}
+footer.site .label{font-size:11px;letter-spacing:.22em;color:#a99d96;text-transform:uppercase}
+footer.site .names{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
+footer.site .names li{border:1px solid #4a372a;border-radius:99px;padding:3px 14px;color:#f1e8e2}
+footer.site .copy{margin:20px 0 0;letter-spacing:.04em;color:#a99d96;font-size:12px}
 </style>
 </head>
 <body>
@@ -150,7 +176,22 @@ footer{border-top:1px solid var(--line);padding:22px 0 40px;color:var(--mut);fon
     </section>
 
     <section class="card">
-      <h2><i>4</i>AI 답변에서 원래 정보 복원</h2>
+      <h2><i>4</i><button type="button" class="ttl" id="whyBtn" aria-expanded="false" aria-controls="why">AI 답변에서 원래 정보 복원 <span class="hint">왜 필요한가요? <span class="chev" aria-hidden="true">▾</span></span></button></h2>
+      <div class="why" id="why" hidden>
+        <b>왜 “복원하기”가 필요한가요?</b>
+        <p>AI에는 실제 개인정보 대신 <code>[지정어_1]</code> 같은 가짜 이름표만 보냅니다. 그래서 진짜 이름이나 연락처는 이 브라우저 밖으로 나가지 않아요.</p>
+        <p>다만 AI가 써 준 답변에도 그 이름표가 그대로 들어 있습니다. <b>복원하기</b>는 답변 속 이름표를 원래 정보로 되돌려, 바로 보내거나 쓸 수 있는 글로 만들어 줍니다.</p>
+        <div class="ex">
+          <div><small>AI 답변 (이름표 포함)</small>[지정어_1]님, [계좌번호_1]로 환불해 드리겠습니다.</div>
+          <div class="arrow">↓ 복원하기</div>
+          <div><small>복원 결과</small>홍길동님, 110-123-456789로 환불해 드리겠습니다.</div>
+        </div>
+        <ul>
+          <li>“토큰으로 치환” 방식으로 가린 경우에만 복원할 수 있어요. 별표(*)는 원래 값을 지우기 때문에 복원되지 않습니다.</li>
+          <li>복원 정보는 이 페이지에만 있어요. 새로고침하거나 닫으면 사라지니, 그 전에 복원하세요.</li>
+          <li>복원은 내 브라우저 안에서만 이루어지며 AI나 서버로 전송되지 않습니다.</li>
+        </ul>
+      </div>
       <p class="note" style="margin-top:0">토큰 방식으로 마스킹한 경우에만 가능합니다. 이 페이지를 닫거나 새로고침하면 복원 정보가 사라지니, 그 전에 복원하세요.</p>
       <label for="ans">AI 답변 붙여넣기</label>
       <textarea id="ans"></textarea>
@@ -206,8 +247,18 @@ footer{border-top:1px solid var(--line);padding:22px 0 40px;color:var(--mut);fon
 </main>
 
 
-<footer>
-  <div class="wrap">동국대학교 · 개인정보보호 프로젝트<br>정규식 기반이라 놓치는 정보가 있을 수 있습니다. AI에 보내기 전에 결과를 꼭 확인하세요.</div>
+<footer class="site">
+  <div class="wrap">
+    <p class="warn">정규식 기반이라 놓치는 정보가 있을 수 있습니다. AI에 보내기 전에 결과를 꼭 확인하세요.</p>
+    <div class="team">
+      <span class="label">Created by</span>
+      <div class="brand"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Z" fill="#e47821"/><path d="m8.5 12 2.5 2.5 4.5-5" fill="none" stroke="#1f1410" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><b>Aegis AI</b></div>
+      <ul class="names" aria-label="팀원">
+        <li>조성근</li><li>정종현</li><li>정세라</li><li>김예니</li><li>이세진</li>
+      </ul>
+    </div>
+    <p class="copy">Copyright &copy; DONGGUK UNIVERSITY. ALL RIGHTS RESERVED.</p>
+  </div>
 </footer>
 
 <!-- 포함된 라이브러리: JSZip(MIT/GPLv3), pdf.js(Apache-2.0) -->
@@ -481,6 +532,9 @@ $('fgo').onclick=async()=>{
   $('fgo').disabled=false;
   fmsg(ok?ok+'개 파일을 처리했습니다. 다운로드한 뒤 내용을 열어 확인하세요.'+($('fmode').value==='token'?' AI 답변은 “텍스트 마스킹” 탭 ④에서 복원할 수 있어요.':''):'처리된 파일이 없습니다.',ok?'ok':'err');
 };
+
+/* ---------- ④ 복원 설명 펼치기 ---------- */
+$('whyBtn').onclick=()=>{const b=$('whyBtn'),open=b.getAttribute('aria-expanded')!=='true';b.setAttribute('aria-expanded',String(open));$('why').hidden=!open;};
 </script>
 </body>
 </html>
