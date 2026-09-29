@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""AI에 넘기기 전 개인정보 마스킹 (Word / Excel / PDF / 텍스트) + 선택적 암호화.
+"""AI에 넘기기 전 개인정보 마스킹 (Word / Excel / PDF / 텍스트) + 선택적 비밀번호 설정.
 
-설치:  pip install python-docx openpyxl pypdf cryptography
-사용:  python pii_guard.py 파일1 [파일2 ...] [--words 홍길동,김영희] [--star] [--map] [--encrypt]
+설치:  pip install python-docx openpyxl pypdf cryptography msoffcrypto-tool
+사용:  python pii_guard.py 파일1 [파일2 ...] [--words 홍길동,김영희] [--star] [--map] [--lock | --lock-only]
 
   --words    자동으로 못 찾는 이름·회사명 등 (쉼표 구분)
   --star     토큰 대신 별표(*)로 가림 (복원 불가)
   --map      토큰→원본 대응표(_map.json) 저장. 이 파일에는 개인정보가 들어 있으니 따로 보관하세요.
-  --encrypt  원본 파일(개인정보 포함)을 비밀번호로 암호화한 .enc 파일을 함께 만듦
-             (웹 도구 pii-guard.html의 '복호화'로도 열 수 있음)
+  --lock       원본 파일(개인정보 포함)에 열기 비밀번호를 걸어 '이름_locked.확장자'로 함께 저장 (docx, xlsx, pdf)
+  --lock-only  마스킹은 하지 않고 비밀번호만 설정
 결과: 원본은 건드리지 않고 '이름_masked.확장자' 로 저장합니다. PDF는 '이름_pdf_masked.txt'(텍스트만 추출).
 """
 import argparse, getpass, json, os, re, time
@@ -113,35 +113,54 @@ def do_text(src, dst, M):
     open(dst, 'w', encoding='utf-8').write(M.text(open(src, encoding='utf-8-sig').read()))
 
 
-def encrypt(path, pw):
-    from cryptography.hazmat.primitives import hashes
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-    salt, iv = os.urandom(16), os.urandom(12)
-    key = PBKDF2HMAC(hashes.SHA256(), 32, salt, 250000).derive(pw.encode())
-    name = os.path.basename(path).encode()
-    pt = len(name).to_bytes(2, 'big') + name + open(path, 'rb').read()
-    out = os.path.join(os.path.dirname(os.path.abspath(path)), f'encrypted_{int(time.time())}.enc')
-    open(out, 'wb').write(b'PIIENC1' + salt + iv + AESGCM(key).encrypt(iv, pt, None))
-    return out
+def lock(path, pw):
+    """파일 자체에 열기 비밀번호를 설정 (Word/Excel/PDF 프로그램에서 바로 열림)."""
+    base, ext = os.path.splitext(path)
+    ext = ext.lower()
+    dst = base + '_locked' + ext
+    if ext == '.pdf':
+        from pypdf import PdfReader, PdfWriter
+        w = PdfWriter(clone_from=PdfReader(path))
+        w.encrypt(pw, algorithm='AES-256')
+        with open(dst, 'wb') as o:
+            w.write(o)
+    elif ext in ('.docx', '.xlsx'):
+        from msoffcrypto.format.ooxml import OOXMLFile
+        with open(path, 'rb') as i, open(dst, 'wb') as o:
+            OOXMLFile(i).encrypt(pw, o)
+    else:
+        raise ValueError('비밀번호 설정은 docx, xlsx, pdf만 지원합니다.')
+    return dst
+
+
+def ask_pw():
+    pw = getpass.getpass('파일 열기 비밀번호(8자 이상): ')
+    if len(pw) < 8:
+        raise SystemExit('비밀번호는 8자 이상이어야 합니다.')
+    if pw != getpass.getpass('비밀번호 확인: '):
+        raise SystemExit('비밀번호가 서로 다릅니다.')
+    return pw
 
 
 def main():
-    ap = argparse.ArgumentParser(description='개인정보 마스킹 + 암호화')
+    ap = argparse.ArgumentParser(description='개인정보 마스킹 + 파일 비밀번호 설정')
     ap.add_argument('files', nargs='+')
     ap.add_argument('--words', default='')
     ap.add_argument('--star', action='store_true')
     ap.add_argument('--map', action='store_true')
-    ap.add_argument('--encrypt', action='store_true')
+    ap.add_argument('--lock', action='store_true')
+    ap.add_argument('--lock-only', action='store_true')
     a = ap.parse_args()
 
-    pw = None
-    if a.encrypt:
-        pw = getpass.getpass('암호화 비밀번호(8자 이상): ')
-        if len(pw) < 8:
-            raise SystemExit('비밀번호는 8자 이상이어야 합니다.')
+    pw = ask_pw() if (a.lock or a.lock_only) else None
 
     for f in a.files:
+        if a.lock_only:
+            try:
+                print(f'{f} -> {lock(f, pw)}')
+            except Exception as e:
+                print(f'실패: {f} - {e}')
+            continue
         base, ext = os.path.splitext(f)
         ext = ext.lower()
         M = Masker(a.words.split(','), a.star)
@@ -163,7 +182,10 @@ def main():
         if a.map and M.map:
             json.dump(M.map, open(base + '_map.json', 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
         if pw:
-            print('  원본 암호화 ->', encrypt(f, pw))
+            try:
+                print('  원본 잠금 ->', lock(f, pw))
+            except Exception as e:
+                print('  잠금 실패:', e)
 
 
 if __name__ == '__main__':
