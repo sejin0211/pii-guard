@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>개인정보 마스킹 · 파일 암호화</title>
+<style>
+:root{--bg:#eef1f5;--card:#fff;--ink:#1a2230;--mut:#5d6878;--line:#d3d9e2;--acc:#1c4fd8;--accink:#fff;--tok:#dfe8ff;--err:#b3261e;--ok:#12703c}
+@media(prefers-color-scheme:dark){:root{--bg:#10141b;--card:#181e28;--ink:#e6eaf1;--mut:#96a1b3;--line:#2b3342;--acc:#7c9dff;--accink:#0b1226;--tok:#26355f;--err:#ff8a80;--ok:#6fdc9a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.65 system-ui,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
+main{max-width:820px;margin:0 auto;padding:28px 16px 56px}
+h1{font-size:22px;margin:0 0 4px;letter-spacing:-.01em}
+.sub{color:var(--mut);margin:0 0 20px}
+nav{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:18px}
+nav button{background:none;border:0;border-bottom:3px solid transparent;padding:10px 14px;font:inherit;color:var(--mut);cursor:pointer}
+nav button[aria-selected=true]{color:var(--ink);border-color:var(--acc);font-weight:600}
+section{display:none}section.on{display:block}
+label{display:block;font-weight:600;margin:16px 0 6px}
+textarea,input[type=text],input[type=password],select{width:100%;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink);font:inherit}
+textarea{min-height:150px;resize:vertical}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px}
+button.b{background:var(--acc);color:var(--accink);border:0;border-radius:6px;padding:9px 16px;font:inherit;font-weight:600;cursor:pointer}
+button.g{background:none;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:9px 14px;font:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.msg{margin-top:10px;min-height:1.6em;color:var(--mut)}
+.msg.err{color:var(--err)}.msg.ok{color:var(--ok)}
+.note{color:var(--mut);font-size:13.5px;margin:6px 0 0}
+details{margin-top:22px;border-top:1px solid var(--line);padding-top:12px}
+summary{cursor:pointer;font-weight:600}
+mark{background:var(--tok);color:inherit}
+</style>
+</head>
+<body>
+<main>
+<h1>개인정보 마스킹 · 파일 암호화</h1>
+<p class="sub">모든 처리는 이 브라우저 안에서만 이루어지며, 내용이 서버로 전송되지 않습니다.</p>
+
+<nav role="tablist">
+  <button role="tab" aria-selected="true" data-t="m">텍스트 마스킹</button>
+  <button role="tab" aria-selected="false" data-t="e">파일 암호화·복호화</button>
+</nav>
+
+<section id="m" class="on">
+  <label for="src">AI에 보낼 텍스트</label>
+  <textarea id="src" placeholder="여기에 붙여넣거나 아래에서 텍스트 파일을 불러오세요."></textarea>
+  <div class="row">
+    <input type="file" id="tf" accept=".txt,.csv,.md,.json,.log,.tsv" aria-label="텍스트 파일 불러오기">
+  </div>
+  <label for="words">추가로 가릴 단어 (이름·회사명 등, 쉼표로 구분)</label>
+  <input type="text" id="words" placeholder="홍길동, 김영희, ㈜예시컴퍼니">
+  <p class="note">이름은 자동으로 찾을 수 없어서 직접 입력해야 가려집니다.</p>
+  <label for="mode">가리는 방식</label>
+  <select id="mode">
+    <option value="token">토큰으로 치환 (예: [휴대전화_1]) — 나중에 복원 가능</option>
+    <option value="star">별표(*)로 치환 — 복원 불가</option>
+  </select>
+  <div class="row"><button class="b" id="go">마스킹하기</button></div>
+  <div class="msg" id="mm" role="status"></div>
+  <label for="out">마스킹 결과</label>
+  <textarea id="out" readonly></textarea>
+  <div class="row">
+    <button class="g" id="cp">복사</button>
+    <button class="g" id="dl">파일로 저장</button>
+  </div>
+  <details>
+    <summary>AI 답변에서 원래 정보 복원하기</summary>
+    <p class="note">토큰 방식으로 마스킹한 경우에만 가능합니다. 이 페이지를 닫거나 새로고침하면 복원 정보가 사라집니다.</p>
+    <label for="ans">AI 답변 붙여넣기</label>
+    <textarea id="ans"></textarea>
+    <div class="row"><button class="b" id="rs">복원하기</button></div>
+    <label for="rout">복원 결과</label>
+    <textarea id="rout" readonly></textarea>
+  </details>
+</section>
+
+<section id="e">
+  <label for="ef">파일 선택</label>
+  <input type="file" id="ef">
+  <label for="pw">비밀번호 (8자 이상)</label>
+  <input type="password" id="pw" autocomplete="off">
+  <p class="note">비밀번호를 잃어버리면 파일을 복구할 수 없습니다. 암호화된 파일은 AI가 읽을 수 없으니 보관·전달용으로 쓰세요.</p>
+  <div class="row">
+    <button class="b" id="en">암호화</button>
+    <button class="g" id="de">복호화</button>
+  </div>
+  <div class="msg" id="em" role="status"></div>
+</section>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-selected',x===b));
+  document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id===b.dataset.t));
+});
+
+/* ---------- 마스킹 ---------- */
+const RULES=[
+  ['주민등록번호',/\d{6}[-\s]?[1-4]\d{6}/g],
+  ['카드번호',/\d{4}[-\s]\d{4}[-\s]\d{4}[-\s]\d{4}/g],
+  ['휴대전화',/01[016789][-\s.]?\d{3,4}[-\s.]?\d{4}/g],
+  ['전화번호',/0(?:2|[3-6]\d)[-\s.]?\d{3,4}[-\s.]?\d{4}/g],
+  ['이메일',/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g],
+  ['사업자번호',/\d{3}-\d{2}-\d{5}/g],
+  ['여권번호',/\b[MSROD]\d{8}\b/g],
+  ['IP주소',/\b(?:\d{1,3}\.){3}\d{1,3}\b/g],
+  ['계좌번호',/\d{2,6}-\d{2,6}-\d{2,8}(?:-\d{1,4})?/g]
+];
+let MAP={};
+
+function mask(text,mode,wordsRaw){
+  const rules=[...RULES];
+  const ws=wordsRaw.split(/[,\n]/).map(s=>s.trim()).filter(Boolean).sort((a,b)=>b.length-a.length);
+  if(ws.length)rules.unshift(['지정어',new RegExp(ws.map(w=>w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|'),'g')]);
+  const seen={},cnt={},found={},map={};
+  let out=text;
+  for(const [label,re] of rules){
+    out=out.replace(re,m=>{
+      if(label==='계좌번호'&&/^(19|20)\d{2}-\d{2}-\d{2}$/.test(m))return m;
+      found[label]=(found[label]||0)+1;
+      if(mode==='star')return m.replace(/[0-9A-Za-z가-힣]/g,'*');
+      const k=label+'|'+m;
+      if(!seen[k]){cnt[label]=(cnt[label]||0)+1;seen[k]='['+label+'_'+cnt[label]+']';map[seen[k]]=m;}
+      return seen[k];
+    });
+  }
+  return {out,map,found};
+}
+
+$('tf').onchange=async e=>{
+  const f=e.target.files[0];if(f)$('src').value=await f.text();
+};
+$('go').onclick=()=>{
+  const r=mask($('src').value,$('mode').value,$('words').value);
+  $('out').value=r.out;MAP=r.map;
+  const parts=Object.entries(r.found).map(([k,v])=>k+' '+v+'건');
+  const m=$('mm');
+  m.className='msg '+(parts.length?'ok':'');
+  m.textContent=parts.length?'가린 항목: '+parts.join(', ')+' — 전송 전에 결과를 한 번 더 확인하세요.':'자동으로 찾은 개인정보가 없습니다. 이름 등은 위 칸에 직접 입력해야 합니다.';
+};
+$('cp').onclick=async()=>{
+  try{await navigator.clipboard.writeText($('out').value);$('mm').className='msg ok';$('mm').textContent='복사했습니다.';}
+  catch{$('out').select();$('mm').textContent='자동 복사가 막혀 있습니다. 선택된 내용을 직접 복사하세요.';}
+};
+function save(blob,name){
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+$('dl').onclick=()=>save(new Blob([$('out').value],{type:'text/plain'}),'masked.txt');
+$('rs').onclick=()=>{
+  let t=$('ans').value;
+  for(const [tok,orig] of Object.entries(MAP))t=t.split(tok).join(orig);
+  $('rout').value=t;
+};
+
+/* ---------- 암호화 ---------- */
+const enc=new TextEncoder(),dec=new TextDecoder(),MAGIC='PIIENC1';
+async function deriveKey(pw,salt,usage){
+  const base=await crypto.subtle.importKey('raw',enc.encode(pw),'PBKDF2',false,['deriveKey']);
+  return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:250000,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,usage);
+}
+async function encryptFile(file,pw){
+  const salt=crypto.getRandomValues(new Uint8Array(16)),iv=crypto.getRandomValues(new Uint8Array(12));
+  const key=await deriveKey(pw,salt,['encrypt']);
+  const nm=enc.encode(file.name),data=new Uint8Array(await file.arrayBuffer());
+  const pt=new Uint8Array(2+nm.length+data.length);
+  new DataView(pt.buffer).setUint16(0,nm.length);pt.set(nm,2);pt.set(data,2+nm.length);
+  const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,pt));
+  return new Blob([enc.encode(MAGIC),salt,iv,ct]);
+}
+async function decryptFile(file,pw){
+  const b=new Uint8Array(await file.arrayBuffer());
+  if(dec.decode(b.slice(0,7))!==MAGIC)throw new Error('format');
+  const key=await deriveKey(pw,b.slice(7,23),['decrypt']);
+  const pt=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:b.slice(23,35)},key,b.slice(35)));
+  const n=new DataView(pt.buffer).getUint16(0);
+  return {blob:new Blob([pt.slice(2+n)]),name:dec.decode(pt.slice(2,2+n))};
+}
+function say(t,c){const m=$('em');m.textContent=t;m.className='msg '+(c||'');}
+async function run(kind){
+  const f=$('ef').files[0],pw=$('pw').value;
+  if(!f)return say('파일을 먼저 선택하세요.','err');
+  if(pw.length<8)return say('비밀번호는 8자 이상이어야 합니다.','err');
+  if(!(window.crypto&&crypto.subtle))return say('이 브라우저에서는 암호화 기능을 쓸 수 없습니다. 최신 Chrome, Edge, Firefox로 열어 주세요.','err');
+  say('처리 중…');
+  try{
+    if(kind==='en'){
+      save(await encryptFile(f,pw),'encrypted_'+Date.now()+'.enc');
+      say('암호화한 파일을 저장했습니다. 원본 파일은 직접 삭제해야 합니다.','ok');
+    }else{
+      const r=await decryptFile(f,pw);save(r.blob,r.name);
+      say('복호화한 파일을 저장했습니다: '+r.name,'ok');
+    }
+  }catch(e){
+    say(e.message==='format'?'이 도구로 암호화한 파일이 아닙니다.':(kind==='de'?'비밀번호가 틀렸거나 파일이 손상되었습니다.':'처리 중 오류가 발생했습니다.'),'err');
+  }
+}
+$('en').onclick=()=>run('en');
+$('de').onclick=()=>run('de');
+</script>
+</body>
+</html>
