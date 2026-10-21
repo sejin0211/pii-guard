@@ -15,7 +15,7 @@ import argparse, getpass, json, os, re, time
 
 N, X = r'(?<!\d)', r'(?!\d)'
 RULES = [
-    ('주민등록번호', re.compile(N + r'\d{6}[- ]?[1-4]\d{6}' + X)),
+    ('주민등록번호', re.compile(N + r'\d{6}[- ]?[1-8]\d{6}' + X)),  # 5~8: 외국인등록번호
     ('카드번호',     re.compile(N + r'\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}' + X)),
     ('휴대전화',     re.compile(N + r'01[016789][-. ]?\d{3,4}[-. ]?\d{4}' + X)),
     ('전화번호',     re.compile(N + r'0(?:2|[3-6]\d)[-. ]?\d{3,4}[-. ]?\d{4}' + X)),
@@ -117,11 +117,10 @@ def do_docx(src, dst, M):
             xml = hasattr(part, '_element')
             root = part._element if xml else etree.fromstring(part.blob)  # 각주 등은 python-docx가 XML로 읽지 않음
             # 하이퍼링크·텍스트 상자 안의 글자까지 포함 (텍스트 상자 속 문단은 따로 처리)
+            # delText: 변경 내용 추적으로 지운 글자, instrText: 필드 코드 (HYPERLINK "mailto:..." 등, 여러 조각으로 나뉘기도 함)
             for p in root.iter(W + 'p'):
-                mask_group([t for t in p.iter(W + 't') if nearest_p(t) is p], M)
-            for t in root.iter(W + 'instrText'):   # 필드 코드 (HYPERLINK "mailto:..." 등)
-                if t.text:
-                    t.text = M.text(t.text)
+                for tag in ('t', 'delText', 'instrText'):
+                    mask_group([t for t in p.iter(W + tag) if nearest_p(t) is p], M)
             if not xml:
                 part._blob = etree.tostring(root, xml_declaration=True, encoding='UTF-8', standalone=True)
         for rel in part.rels.values():   # 하이퍼링크 주소(mailto: 등)
@@ -140,9 +139,12 @@ def do_xlsx(src, dst, M):
                 if isinstance(v, str) and not v.startswith('='):
                     c.value = M.text(v)
                 elif isinstance(v, int) and not isinstance(v, bool):
-                    m = M.text(str(v))   # 숫자로 저장된 주민번호·카드번호 등
-                    if m != str(v):
-                        c.value = m
+                    # 숫자로 저장된 주민번호·카드번호 등. 엑셀이 앞자리 0을 지운 번호(010…, 2000년대생 주민번호)도 확인
+                    for s in (str(v), '0' + str(v)):
+                        m = M.text(s)
+                        if m != s:
+                            c.value = m
+                            break
                 if c.hyperlink:   # 하이퍼링크 주소(mailto: 등)
                     h = c.hyperlink
                     for k in ('target', 'location', 'display', 'tooltip'):
@@ -167,10 +169,13 @@ def do_pdf(src, dst, M):
 def do_text(src, dst, M):
     with open(src, 'rb') as i:
         raw = i.read()
-    try:
-        text = raw.decode('utf-8-sig')
-    except UnicodeDecodeError:
-        text = raw.decode('cp949')   # 엑셀에서 저장한 CSV 등 EUC-KR(CP949) 파일 → UTF-8로 저장
+    if raw[:2] in (b'\xff\xfe', b'\xfe\xff'):   # 엑셀 '유니코드 텍스트' 등 UTF-16 파일
+        text = raw.decode('utf-16')
+    else:
+        try:
+            text = raw.decode('utf-8-sig')
+        except UnicodeDecodeError:
+            text = raw.decode('cp949')   # 엑셀에서 저장한 CSV 등 EUC-KR(CP949) 파일 → UTF-8로 저장
     with open(dst, 'w', encoding='utf-8', newline='') as o:   # 원본 줄바꿈(\r\n 등) 그대로 유지
         o.write(M.text(text))
 

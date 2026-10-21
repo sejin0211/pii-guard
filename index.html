@@ -435,7 +435,7 @@ document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
 
 /* ---------- 마스킹 엔진 (텍스트·파일 공용) ---------- */
 const RULES=[
-  ['주민등록번호',/(?<!\d)\d{6}[- ]?[1-4]\d{6}(?!\d)/g],
+  ['주민등록번호',/(?<!\d)\d{6}[- ]?[1-8]\d{6}(?!\d)/g],  /* 5~8: 외국인등록번호 */
   ['카드번호',/(?<!\d)\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}(?!\d)/g],
   ['휴대전화',/(?<!\d)01[016789][-. ]?\d{3,4}[-. ]?\d{4}(?!\d)/g],
   ['전화번호',/(?<!\d)0(?:2|[3-6]\d)[-. ]?\d{3,4}[-. ]?\d{4}(?!\d)/g],
@@ -619,7 +619,8 @@ async function maskDocx(buf,M,meta){
   const nearestP=t=>{let e=t.parentNode;while(e&&!(e.localName==='p'&&e.namespaceURI===W))e=e.parentNode;return e;};
   for(const n of Object.keys(zip.files)){
     if(!/^word\/(document|header\d*|footer\d*|footnotes|endnotes|comments)\.xml$/.test(n))continue;
-    await editXml(zip,n,d=>{els(d,W,'p').forEach(p=>maskGroup(els(p,W,'t').filter(t=>nearestP(t)===p),M));els(d,W,'instrText').forEach(t=>{const s=t.textContent,x=M.fn(s);if(x!==s)t.textContent=x;});});
+    /* delText: 변경 내용 추적으로 지운 글자, instrText: 필드 코드(HYPERLINK "mailto:..." 등, 여러 조각으로 나뉘기도 함) */
+    await editXml(zip,n,d=>els(d,W,'p').forEach(p=>['t','delText','instrText'].forEach(k=>maskGroup(els(p,W,k).filter(t=>nearestP(t)===p),M))));
   }
   await maskRels(zip,M);
   if(meta)await stripMeta(zip);
@@ -637,7 +638,8 @@ async function maskXlsx(buf,M,meta){
       if(t==='inlineStr')els(c,S,'is').forEach(grp);
       else if((!t||t==='n')&&!els(c,S,'f').length){          /* 숫자로 저장된 주민번호·카드번호 등 */
         const v=els(c,S,'v')[0];if(!v)return;
-        const s=v.textContent,m=M.fn(s);
+        const s=v.textContent;let m=M.fn(s);
+        if(m===s&&/^\d+$/.test(s)){const z='0'+s,y=M.fn(z);if(y!==z)m=y;}   /* 엑셀이 앞자리 0을 지운 번호(010…, 2000년대생 주민번호) */
         if(m!==s){
           c.setAttribute('t','inlineStr');c.removeChild(v);
           const is=d.createElementNS(S,'is'),tt=d.createElementNS(S,'t');
@@ -672,6 +674,8 @@ async function maskPdf(buf,M){
   return new Blob([M.fn(text)],{type:'text/plain'});
 }
 function readText(buf){
+  const b=new Uint8Array(buf,0,Math.min(2,buf.byteLength));   /* 엑셀 '유니코드 텍스트' 등 UTF-16 파일 */
+  if(b[0]===0xFF&&b[1]===0xFE||b[0]===0xFE&&b[1]===0xFF)return {text:new TextDecoder(b[0]===0xFF?'utf-16le':'utf-16be').decode(buf),note:'UTF-16 파일이라 UTF-8로 변환해 저장했습니다.'};
   try{return {text:new TextDecoder('utf-8',{fatal:true}).decode(buf),note:''};}
   catch{return {text:new TextDecoder('euc-kr').decode(buf),note:'EUC-KR(CP949) 파일이라 UTF-8로 변환해 저장했습니다.'};}
 }
