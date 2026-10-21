@@ -27,6 +27,13 @@ CASES = [
     ('110-123-456789', '[계좌번호_1]'),
     ('2026-09-29', '2026-09-29'),                       # 날짜는 그대로
     ('버전 1.2.3.4.5', '버전 1.2.3.4.5'),                 # IP 아님
+    ('연락처(010-1234-5678)', '연락처([휴대전화_1])'),       # 괄호는 그대로 남아야 함
+    ('(02-2260-3912)', '([전화번호_1])'),
+    ('(010)1234-5678', '[휴대전화_1]'),
+    ('+82 (0)2-2260-3912', '[전화번호_1]'),
+    ('０１０-１２３４-５６７８', '[휴대전화_1]'),            # 전각 숫자
+    ('M123A4567', '[여권번호_1]'),                      # 신형 여권
+    ('주문번호 2026102112345', '주문번호 2026102112345'),  # 앞 6자리가 날짜가 아니면 주민번호 아님
 ]
 
 
@@ -41,6 +48,12 @@ class Rules(unittest.TestCase):
         self.assertEqual(M.text('홍길동 010-1234-5678 / 홍길동 010-1234-5678'),
                          '[지정어_1] [휴대전화_1] / [지정어_1] [휴대전화_1]')
         self.assertEqual(M.map['[휴대전화_1]'], '010-1234-5678')
+
+    def test_fullwidth_keeps_original_and_star_hides_it(self):
+        M = g.Masker()
+        self.assertEqual(M.text('０１０-１２３４-５６７８'), '[휴대전화_1]')
+        self.assertEqual(M.map['[휴대전화_1]'], '０１０-１２３４-５６７８')   # 복원하면 원래 글자 그대로
+        self.assertEqual(g.Masker(star=True).text('０１０-１２３４-５６７８'), '***-****-****')
 
     def test_rules_match_web(self):
         """웹(index.html)과 파이썬의 규칙이 똑같은지 확인 → 한쪽만 고치는 실수 방지."""
@@ -72,15 +85,28 @@ class Files(unittest.TestCase):
         p._p.append(parse_xml(f'<w:del {ns} w:id="1" w:author="a"><w:r><w:delText>010-9876-5432</w:delText></w:r></w:del>'))
         for piece in (' HYPERLINK "mailto:kim.yh', '@example.com" '):
             p._p.append(parse_xml(f'<w:r {ns}><w:instrText xml:space="preserve">{piece}</w:instrText></w:r>'))
+        # 속성 속 글자: 필드 코드(fldSimple), 변경 추적 작성자 이름
+        d.element.body.append(parse_xml(f'<w:p {ns}><w:fldSimple w:instr=" HYPERLINK &quot;mailto:lee.sj@example.com&quot; ">'
+                                        f'<w:r><w:t>메일</w:t></w:r></w:fldSimple></w:p>'))
+        d.element.body.append(parse_xml(f'<w:p {ns}><w:ins w:id="2" w:author="홍길동"><w:r><w:t>고친 글</w:t></w:r></w:ins></w:p>'))
         d.save(self.p('a.docx'))
-        g.do_docx(self.p('a.docx'), self.p('a_masked.docx'), g.Masker())
+        g.do_docx(self.p('a.docx'), self.p('a_masked.docx'), g.Masker(['홍길동']))
 
         runs = [(r.text, r.bold, r.italic) for r in docx.Document(self.p('a_masked.docx')).paragraphs[0].runs]
         self.assertEqual(runs, [('중요:', True, None), (' 담당 [휴대전화_1] 확인 ', None, None), ('끝', None, True)])
         with zipfile.ZipFile(self.p('a_masked.docx')) as z:
             xml = z.read('word/document.xml').decode()
-        for s in ('010-1111-2222', '010-9876-5432', 'kim.yh'):
+        for s in ('010-1111-2222', '010-9876-5432', 'kim.yh', 'lee.sj', '홍길동'):
             self.assertNotIn(s, xml)
+        self.assertEqual(g.leftover(self.p('a_masked.docx'), ['홍길동']), {})
+
+    def test_broken_files_give_korean_messages(self):
+        open(self.p('empty.docx'), 'wb').close()
+        with open(self.p('old.xlsx'), 'wb') as f:   # 암호화된 Office 파일·옛 형식과 같은 시작 바이트
+            f.write(b'\xd0\xcf\x11\xe0' + b'\0' * 100)
+        for name, do, word in (('empty.docx', g.do_docx, '손상'), ('old.xlsx', g.do_xlsx, '비밀번호')):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, word):
+                do(self.p(name), self.p('out'), g.Masker())
 
     def test_xlsx_leading_zero_and_recheck(self):
         import openpyxl

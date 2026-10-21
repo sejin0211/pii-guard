@@ -435,13 +435,13 @@ document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
 
 /* ---------- 마스킹 엔진 (텍스트·파일 공용) ---------- */
 const RULES=[   /* pii_guard.py의 RULES와 정규식이 같아야 함 (tests/test_pii_guard.py가 확인) */
-  ['주민등록번호',/(?<!\d)\d{6}[- ]?[1-8]\d{6}(?!\d)/g],  /* 5~8: 외국인등록번호 */
+  ['주민등록번호',/(?<!\d)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])[- ]?[1-8]\d{6}(?!\d)/g],  /* 앞 6자리는 실제 날짜일 때만, 뒷자리 5~8은 외국인등록번호 */
   ['카드번호',/(?<!\d)\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}(?!\d)/g],
-  ['휴대전화',/(?<!\d)\(?01[016789]\)?[-. ]?\d{3,4}[-. ]?\d{4}(?!\d)/g],
-  ['전화번호',/(?:\+82[-. ]?|(?<!\d)\(?0)(?:2|[3-6]\d|70|80|1[016789])\)?[-. ]?\d{3,4}[-. ]?\d{4}(?!\d)/g],  /* (02)123-4567, 070·080, +82 포함 */
+  ['휴대전화',/(?<!\d)(?:\(01[016789]\)|01[016789])[-. ]?\d{3,4}[-. ]?\d{4}(?!\d)/g],
+  ['전화번호',/(?:(?<!\d)(?:\(0(?:2|[3-6]\d|70|80)\)|0(?:2|[3-6]\d|70|80))|\+82[-. ]?(?:\(0\)[-. ]?)?(?:2|[3-6]\d|70|80|1[016789]))[-. ]?\d{3,4}[-. ]?\d{4}(?!\d)/g],  /* (02)123-4567, 070·080, +82 포함 */
   ['이메일',/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g],
   ['사업자번호',/(?<!\d)\d{3}-\d{2}-\d{5}(?!\d)/g],
-  ['여권번호',/(?<![A-Za-z0-9])[MSROD]\d{8}(?!\d)/g],
+  ['여권번호',/(?<![A-Za-z0-9])[MSROD](?:\d{8}|\d{3}[A-Z]\d{4})(?![A-Za-z0-9])/g],  /* 신형(2021~): M123A4567 */
   ['IP주소',/(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?!\d|\.\d)/g],
   ['계좌번호',/(?<!\d)\d{2,6}-\d{2,6}-\d{2,8}(?:-\d{1,4})?(?!\d)/g]
 ];
@@ -449,8 +449,10 @@ const RULES=[   /* pii_guard.py의 RULES와 정규식이 같아야 함 (tests/te
 const SES={seen:{},cnt:{},map:{}};
 const CATS=RULES.map(r=>r[0]);
 const isDate=(label,m)=>label==='계좌번호'&&/^(19|20)\d{2}-\d{2}-\d{2}$/.test(m);
+/* 전각 숫자 → 일반 숫자 (글자 수가 같아 위치가 그대로). 검사만 바꾼 글로 하고 결과에는 원래 글자를 씀 */
+const norm=s=>s.replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0));
 function wordsRule(raw){
-  const ws=raw.split(/[,\n]/).map(s=>s.trim()).filter(Boolean).sort((a,b)=>b.length-a.length);
+  const ws=norm(raw).split(/[,\n]/).map(s=>s.trim()).filter(Boolean).sort((a,b)=>b.length-a.length);
   return ws.length?new RegExp(ws.map(w=>w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|'),'g'):null;
 }
 /* 규칙을 순서대로 적용. 찾은 값은 잠시 보호 문자로 바꿔 두어서, 꺼 둔 항목이 다른 항목으로 잘못 가려지지 않게 함 */
@@ -458,22 +460,26 @@ const PUA=n=>[...n.toString(16)].map(c=>String.fromCharCode(0xE010+parseInt(c,16
 /* 결과는 [그대로인 조각] 또는 [찾은 값, 바꿀 값]의 목록 → Word에서 바꿀 부분만 고쳐 서식을 유지할 때 사용 */
 function scanParts(text,wordsRaw,cats,onHit){
   const rules=[...RULES],w=wordsRule(wordsRaw);if(w)rules.unshift(['지정어',w]);
-  const keep=[];let s=text;
+  const keep=[];let s=norm(text),o=text;   /* s: 검사용(전각 숫자를 일반 숫자로), o: 원래 글자. 둘은 같은 자리에 같은 보호 문자가 들어가 위치가 맞음 */
   for(const [label,re] of rules){
     const on=label==='지정어'||cats.has(label);
-    s=s.replace(re,m=>{
-      if(isDate(label,m))return m;
-      keep.push([m,onHit(label,m,on)]);
-      return '\uE000'+PUA(keep.length-1)+'\uE001';
-    });
+    let ns='',no='',last=0;
+    for(const x of s.matchAll(re)){
+      const m=x[0],v=o.slice(x.index,x.index+m.length);
+      if(isDate(label,m))continue;
+      keep.push([v,onHit(label,v,on,m)]);
+      const ph='\uE000'+PUA(keep.length-1)+'\uE001';
+      ns+=s.slice(last,x.index)+ph;no+=o.slice(last,x.index)+ph;last=x.index+m.length;
+    }
+    s=ns+s.slice(last);o=no+o.slice(last);
   }
   const parts=[];let last=0;
-  for(const x of s.matchAll(/\uE000([\uE010-\uE01F]+)\uE001/g)){
-    if(x.index>last)parts.push([s.slice(last,x.index)]);
+  for(const x of o.matchAll(/\uE000([\uE010-\uE01F]+)\uE001/g)){
+    if(x.index>last)parts.push([o.slice(last,x.index)]);
     parts.push(keep[parseInt([...x[1]].map(c=>(c.charCodeAt(0)-0xE010).toString(16)).join(''),16)]);
     last=x.index+x[0].length;
   }
-  if(last<s.length)parts.push([s.slice(last)]);
+  if(last<o.length)parts.push([o.slice(last)]);
   return parts;
 }
 const scan=(...a)=>scanParts(...a).map(p=>p[p.length-1]).join('');
@@ -491,11 +497,11 @@ function partial(label,m){
 }
 function makeMasker(mode,wordsRaw,cats){
   const found={};
-  const hit=(label,m,on)=>{
+  const hit=(label,m,on,nm)=>{   /* m: 원래 글자, nm: 전각 숫자를 일반 숫자로 바꾼 글자 */
     if(!on)return m;
     found[label]=(found[label]||0)+1;
-    if(mode==='star')return m.replace(/[0-9A-Za-z가-힣]/g,'*');
-    if(mode==='partial')return partial(label,m);
+    if(mode==='star')return m.replace(/[0-9０-９A-Za-z가-힣]/g,'*');
+    if(mode==='partial')return partial(label,nm);
     const k=label+'|'+m;
     if(!SES.seen[k]){SES.cnt[label]=(SES.cnt[label]||0)+1;SES.seen[k]='['+label+'_'+SES.cnt[label]+']';SES.map[SES.seen[k]]=m;}
     return SES.seen[k];
@@ -610,24 +616,36 @@ async function zipText(blob){
     t+='\n'+x.replace(/<[^>]+>/g,' ');
     for(const m of x.matchAll(/Target="([^"]*)"/g)){try{t+='\n'+decodeURIComponent(m[1]);}catch{t+='\n'+m[1];}}
     /* 시트 이름, 그림 대체 텍스트, 링크 설명 등 속성 값에 숨은 정보 */
-    for(const m of x.matchAll(/[\s:](?:name|descr|title|alias|tag|tooltip|display)="([^"]*)"/g))t+='\n'+m[1];
+    for(const m of x.matchAll(/[\s:](?:name|descr|title|alias|tag|tooltip|display|instr|author)="([^"]*)"/g))t+='\n'+m[1];
   }
   return t.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;|&#39;/g,"'").replace(/&amp;/g,'&');
 }
+/* Word·Excel 파일 열기. 열 수 없으면 알기 쉬운 한국어 메시지 */
+async function openZip(buf){
+  const b=new Uint8Array(buf,0,Math.min(4,buf.byteLength));
+  if(b[0]===0xD0&&b[1]===0xCF&&b[2]===0x11&&b[3]===0xE0)   /* 암호화된 Office 파일, 또는 확장자만 바꾼 .doc·.xls */
+    throw new Error('비밀번호가 걸린 파일이거나 옛 형식(.doc, .xls)이에요. 비밀번호를 풀거나 .docx·.xlsx로 다시 저장한 뒤 넣어 주세요.');
+  try{return await JSZip.loadAsync(buf);}
+  catch{throw new Error('파일을 열 수 없어요. 파일이 손상됐거나 Word·Excel 파일이 아닐 수 있어요.');}
+}
 async function maskDocx(buf,M,meta){
-  const zip=await JSZip.loadAsync(buf);
+  const zip=await openZip(buf);
   const nearestP=t=>{let e=t.parentNode;while(e&&!(e.localName==='p'&&e.namespaceURI===W))e=e.parentNode;return e;};
   for(const n of Object.keys(zip.files)){
     if(!/^word\/(document|header\d*|footer\d*|footnotes|endnotes|comments)\.xml$/.test(n))continue;
     /* delText: 변경 내용 추적으로 지운 글자, instrText: 필드 코드(HYPERLINK "mailto:..." 등, 여러 조각으로 나뉘기도 함) */
-    await editXml(zip,n,d=>els(d,W,'p').forEach(p=>['t','delText','instrText'].forEach(k=>maskGroup(els(p,W,k).filter(t=>nearestP(t)===p),M))));
+    /* 속성 속 글자: 필드 코드(fldSimple의 instr), 변경 추적·댓글 작성자 이름(author) */
+    await editXml(zip,n,d=>{
+      els(d,W,'p').forEach(p=>['t','delText','instrText'].forEach(k=>maskGroup(els(p,W,k).filter(t=>nearestP(t)===p),M)));
+      for(const e of d.getElementsByTagName('*'))for(const k of ['instr','author']){const s=e.getAttributeNS(W,k);if(s){const x=M.fn(s);if(x!==s)e.setAttributeNS(W,'w:'+k,x);}}
+    });
   }
   await maskRels(zip,M);
   if(meta)await stripMeta(zip);
   return zip.generateAsync({type:'blob',compression:'DEFLATE',mimeType:OUT.docx});
 }
 async function maskXlsx(buf,M,meta){
-  const zip=await JSZip.loadAsync(buf);
+  const zip=await openZip(buf);
   const grp=root=>maskGroup(els(root,S,'t').filter(t=>['r','si','is','text'].includes(t.parentNode.localName)),M);
   for(const n of Object.keys(zip.files)){
     if(n==='xl/sharedStrings.xml')await editXml(zip,n,d=>els(d,S,'si').forEach(grp));
@@ -662,7 +680,9 @@ async function loadPdfjs(){
 }
 async function maskPdf(buf,M){
   let lib;try{lib=await loadPdfjs();}catch{throw new Error('이 브라우저에서는 PDF를 처리할 수 없습니다. 최신 Chrome·Edge를 사용하거나 파이썬 도구를 이용하세요.');}
-  const pdf=await lib.getDocument({data:new Uint8Array(buf)}).promise;
+  let pdf;
+  try{pdf=await lib.getDocument({data:new Uint8Array(buf)}).promise;}
+  catch(e){throw new Error(e&&e.name==='PasswordException'?'비밀번호가 걸린 PDF예요. 비밀번호를 푼 뒤 다시 넣어 주세요.':'PDF 파일을 열 수 없어요. 파일이 손상됐을 수 있어요.');}
   let text='';
   for(let i=1;i<=pdf.numPages;i++){
     const c=await (await pdf.getPage(i)).getTextContent();

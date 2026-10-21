@@ -11,30 +11,36 @@
   --lock-only  마스킹은 하지 않고 비밀번호만 설정
 결과: 원본은 건드리지 않고 '이름_masked.확장자' 로 저장합니다. PDF는 '이름_pdf_masked.txt'(텍스트만 추출).
 """
-import argparse, getpass, html, json, os, re, zipfile
+import argparse, getpass, html, json, os, re, sys, zipfile
 from urllib.parse import unquote
 
 N, X = r'(?<!\d)', r'(?!\d)'
+C = lambda p: re.compile(p, re.ASCII)   # \d는 0-9만 (웹의 자바스크립트와 같게). 전각 숫자는 FW로 따로 처리
 RULES = [   # index.html의 RULES와 정규식이 같아야 함 (tests/test_pii_guard.py가 확인)
-    ('주민등록번호', re.compile(N + r'\d{6}[- ]?[1-8]\d{6}' + X)),  # 5~8: 외국인등록번호
-    ('카드번호',     re.compile(N + r'\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}' + X)),
-    ('휴대전화',     re.compile(N + r'\(?01[016789]\)?[-. ]?\d{3,4}[-. ]?\d{4}' + X)),
-    # (02)123-4567, 070·080, +82 2-123-4567 / +82 10-1234-5678 형식 포함
-    ('전화번호',     re.compile(r'(?:\+82[-. ]?|(?<!\d)\(?0)(?:2|[3-6]\d|70|80|1[016789])\)?[-. ]?\d{3,4}[-. ]?\d{4}' + X)),
-    ('이메일',       re.compile(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+')),
-    ('사업자번호',   re.compile(N + r'\d{3}-\d{2}-\d{5}' + X)),
-    ('여권번호',     re.compile(r'(?<![A-Za-z0-9])[MSROD]\d{8}(?!\d)')),
-    ('IP주소',       re.compile(r'(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?!\d|\.\d)')),  # 문장 끝 마침표는 허용
-    ('계좌번호',     re.compile(N + r'\d{2,6}-\d{2,6}-\d{2,8}(?:-\d{1,4})?' + X)),
+    # 앞 6자리는 실제 날짜(월 01~12, 일 01~31)일 때만, 뒷자리 5~8은 외국인등록번호
+    ('주민등록번호', C(N + r'\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])[- ]?[1-8]\d{6}' + X)),
+    ('카드번호',     C(N + r'\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}' + X)),
+    ('휴대전화',     C(N + r'(?:\(01[016789]\)|01[016789])[-. ]?\d{3,4}[-. ]?\d{4}' + X)),
+    # (02)123-4567, 070·080, +82 2-123-4567 / +82 (0)2-123-4567 / +82 10-1234-5678 형식 포함
+    ('전화번호',     C(r'(?:(?<!\d)(?:\(0(?:2|[3-6]\d|70|80)\)|0(?:2|[3-6]\d|70|80))|\+82[-. ]?(?:\(0\)[-. ]?)?(?:2|[3-6]\d|70|80|1[016789]))'
+                       r'[-. ]?\d{3,4}[-. ]?\d{4}' + X)),
+    ('이메일',       C(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+')),
+    ('사업자번호',   C(N + r'\d{3}-\d{2}-\d{5}' + X)),
+    ('여권번호',     C(r'(?<![A-Za-z0-9])[MSROD](?:\d{8}|\d{3}[A-Z]\d{4})(?![A-Za-z0-9])')),  # 신형(2021~): M123A4567
+    ('IP주소',       C(r'(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?!\d|\.\d)')),  # 문장 끝 마침표는 허용
+    ('계좌번호',     C(N + r'\d{2,6}-\d{2,6}-\d{2,8}(?:-\d{1,4})?' + X)),
 ]
-DATE = re.compile(r'(19|20)\d{2}-\d{2}-\d{2}')  # 날짜를 계좌번호로 오인하지 않도록
+DATE = C(r'(19|20)\d{2}-\d{2}-\d{2}')  # 날짜를 계좌번호로 오인하지 않도록
+FW = str.maketrans('０１２３４５６７８９', '0123456789')   # 전각 숫자 → 일반 숫자 (글자 수가 같아 위치가 그대로)
+PH_OPEN, PH_CLOSE = chr(0xE000), chr(0xE001)   # 찾은 값을 잠시 바꿔 두는 보호 문자 (사용자 영역 문자)
+PH = re.compile(PH_OPEN + '([' + chr(0xE010) + '-' + chr(0xE019) + ']+)' + PH_CLOSE)
 
 
 class Masker:
     def __init__(self, words=(), star=False):
         self.star, self.map, self.seen, self.cnt, self.found = star, {}, {}, {}, {}
         self.rules = list(RULES)
-        ws = sorted({w.strip() for w in words if w.strip()}, key=len, reverse=True)
+        ws = sorted({w.strip().translate(FW) for w in words if w.strip()}, key=len, reverse=True)
         if ws:
             self.rules.insert(0, ('지정어', re.compile('|'.join(map(re.escape, ws)))))
 
@@ -43,20 +49,24 @@ class Masker:
 
     def parts(self, s):
         """원문을 [그대로인 조각] 또는 [찾은 값, 바꿀 값]의 목록으로 나눔 (Word 서식 유지에 사용).
-        찾은 값은 잠시 보호 문자로 바꿔 두어 뒤의 규칙이 다시 건드리지 않게 함 (웹 도구와 같은 방식)."""
+        찾은 값은 잠시 보호 문자로 바꿔 두어 뒤의 규칙이 다시 건드리지 않게 함 (웹 도구와 같은 방식).
+        검사는 전각 숫자를 일반 숫자로 바꾼 글(s)에서 하고, 결과에는 원래 글자(o)를 씀."""
         keep = []
-
-        def hit(label, v):
-            r = self._sub(label, v)
-            if label == '계좌번호' and r == v:   # 날짜는 그대로
-                return v
-            keep.append([v, r])
-            return '\ue000' + ''.join(chr(0xE010 + int(d)) for d in str(len(keep) - 1)) + '\ue001'
-
+        o, s = s, s.translate(FW)
         for label, rx in self.rules:
-            s = rx.sub(lambda m, l=label: hit(l, m.group(0)), s)
+            ns, no, last = [], [], 0
+            for m in rx.finditer(s):
+                if label == '계좌번호' and DATE.fullmatch(m.group(0)):   # 날짜는 그대로
+                    continue
+                v = o[m.start():m.end()]
+                keep.append([v, self._sub(label, v)])
+                ph = PH_OPEN + ''.join(chr(0xE010 + int(d)) for d in str(len(keep) - 1)) + PH_CLOSE
+                ns += [s[last:m.start()], ph]
+                no += [o[last:m.start()], ph]
+                last = m.end()
+            s, o = ''.join(ns) + s[last:], ''.join(no) + o[last:]
         out = []
-        for i, seg in enumerate(re.split('\ue000([\ue010-\ue019]+)\ue001', s)):
+        for i, seg in enumerate(PH.split(o)):
             if i % 2:
                 out.append(keep[int(''.join(str(ord(c) - 0xE010) for c in seg))])
             elif seg:
@@ -64,11 +74,9 @@ class Masker:
         return out
 
     def _sub(self, label, m):
-        if label == '계좌번호' and DATE.fullmatch(m):
-            return m
         self.found[label] = self.found.get(label, 0) + 1
         if self.star:
-            return re.sub(r'[0-9A-Za-z가-힣]', '*', m)
+            return re.sub(r'[0-9０-９A-Za-z가-힣]', '*', m)
         key = (label, m)
         if key not in self.seen:
             n = self.cnt[label] = self.cnt.get(label, 0) + 1
@@ -110,9 +118,20 @@ def nearest_p(e):
     return e
 
 
+def check_office(path):
+    """Word·Excel 파일을 열기 전에 확인해, 알기 쉬운 오류 메시지를 냄."""
+    with open(path, 'rb') as i:
+        head = i.read(4)
+    if head == b'\xd0\xcf\x11\xe0':   # 암호화된 Office 파일, 또는 확장자만 바꾼 .doc·.xls
+        raise ValueError('비밀번호가 걸린 파일이거나 옛 형식(.doc, .xls)이에요. 비밀번호를 풀거나 .docx·.xlsx로 다시 저장한 뒤 넣어 주세요.')
+    if not zipfile.is_zipfile(path):
+        raise ValueError('파일을 열 수 없어요. 파일이 손상됐거나 Word·Excel 파일이 아닐 수 있어요.')
+
+
 def do_docx(src, dst, M):
     import docx
     from lxml import etree
+    check_office(src)
     d = docx.Document(src)
     for part in d.part.package.iter_parts():
         if DOCX_PARTS.fullmatch(str(part.partname)):
@@ -123,6 +142,10 @@ def do_docx(src, dst, M):
             for p in root.iter(W + 'p'):
                 for tag in ('t', 'delText', 'instrText'):
                     mask_group([t for t in p.iter(W + tag) if nearest_p(t) is p], M)
+            for e in root.iter():   # 속성 속 글자: 필드 코드(fldSimple의 instr), 변경 추적·댓글 작성자 이름(author)
+                for k in (W + 'instr', W + 'author'):
+                    if e.get(k):
+                        e.set(k, M.text(e.get(k)))
             if not xml:
                 part._blob = etree.tostring(root, xml_declaration=True, encoding='UTF-8', standalone=True)
         for rel in part.rels.values():   # 하이퍼링크 주소(mailto: 등)
@@ -133,6 +156,7 @@ def do_docx(src, dst, M):
 
 def do_xlsx(src, dst, M):
     import openpyxl
+    check_office(src)
     wb = openpyxl.load_workbook(src)
     for ws in wb.worksheets:
         for row in ws.iter_rows():
@@ -159,7 +183,14 @@ def do_xlsx(src, dst, M):
 
 def do_pdf(src, dst, M):
     from pypdf import PdfReader
-    text = '\n\n'.join((p.extract_text() or '') for p in PdfReader(src).pages)
+    try:
+        r = PdfReader(src)
+        locked = r.is_encrypted
+    except Exception:
+        raise ValueError('PDF 파일을 열 수 없어요. 파일이 손상됐을 수 있어요.')
+    if locked:
+        raise ValueError('비밀번호가 걸린 PDF예요. 비밀번호를 푼 뒤 다시 넣어 주세요.')
+    text = '\n\n'.join((p.extract_text() or '') for p in r.pages)
     if not text.strip():
         raise ValueError('텍스트를 읽을 수 없는 PDF입니다(스캔본이면 OCR이 필요합니다).')
     # 줄바꿈으로 끊긴 이메일·번호를 이어 붙여서 놓치지 않게 함
@@ -196,7 +227,7 @@ def leftover(dst, words):
                 x = z.read(n).decode('utf-8', 'replace')
                 parts.append(re.sub(r'<[^>]+>', ' ', x))
                 parts += [unquote(v) for v in re.findall(r'Target="([^"]*)"', x)]
-                parts += re.findall(r'[\s:](?:name|descr|title|alias|tag|tooltip|display)="([^"]*)"', x)
+                parts += re.findall(r'[\s:](?:name|descr|title|alias|tag|tooltip|display|instr|author)="([^"]*)"', x)
         text = html.unescape('\n'.join(parts))
     else:
         with open(dst, encoding='utf-8-sig') as i:
@@ -246,13 +277,14 @@ def main():
     a = ap.parse_args()
 
     pw = ask_pw() if (a.lock or a.lock_only) else None
+    fails = 0   # 하나라도 실패하면 종료 코드 1 (자동화에서 알 수 있게)
 
     for f in a.files:
         if a.lock_only:
             try:
                 print(f'{f} -> {lock(f, pw)}')
             except Exception as e:
-                print(f'실패: {f} - {e}')
+                print(f'실패: {f} - {e}'); fails += 1
             continue
         base, ext = os.path.splitext(f)
         ext = ext.lower()
@@ -269,7 +301,7 @@ def main():
             else:
                 print(f'건너뜀(지원하지 않는 형식): {f}'); continue
         except Exception as e:
-            print(f'실패: {f} - {e}'); continue
+            print(f'실패: {f} - {e}'); fails += 1; continue
         found = ', '.join(f'{k} {v}건' for k, v in M.found.items()) or '찾은 항목 없음'
         print(f'{f} -> {dst}  [{found}]')
         left = leftover(dst, a.words.split(','))
@@ -285,8 +317,9 @@ def main():
             try:
                 print('  원본 잠금 ->', lock(f, pw))
             except Exception as e:
-                print('  잠금 실패:', e)
+                print('  잠금 실패:', e); fails += 1
+    return 1 if fails else 0
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
