@@ -260,6 +260,11 @@ h2 .mini{margin-left:auto;padding:5px 12px;font-size:13px;font-weight:600;border
         <option value="partial">일부만 가리기 (예: 010-****-5678) — 복원 불가</option>
         <option value="star">별표(*)로 치환 — 복원 불가</option>
       </select>
+      <label for="fpdf">PDF 결과</label>
+      <select id="fpdf">
+        <option value="pdf">가린 PDF — 레이아웃 그대로, 개인정보 자리에 검은 상자 (쪽마다 그림으로 저장)</option>
+        <option value="txt">텍스트(.txt) — 글자만 뽑음, AI에 글로 보내기 좋음</option>
+      </select>
       <div class="tags" id="cats-f">자동 탐지 · 눌러서 끄고 켜기:</div>
       <label class="chk"><input type="checkbox" id="fmeta" checked><span>문서 속성(작성자, 마지막 수정자, 회사)도 지우기 <small style="color:var(--mut)">— Word·Excel·한글(.hwpx)</small></span></label>
     </section>
@@ -276,7 +281,8 @@ h2 .mini{margin-left:auto;padding:5px 12px;font-size:13px;font-weight:600;border
       <ul class="tips">
         <li>Word·Excel은 서식을 그대로 두고 내용만 가립니다. (Word: 본문·표·머리글·바닥글·각주·댓글·텍스트 상자·링크 주소 / Excel: 셀·메모·링크 주소)</li>
         <li>한글(.hwpx)은 서식을 그대로 두고 본문·표·머리말·각주·필드 값을 가립니다. 첫 쪽 미리보기 그림은 개인정보가 보일 수 있어 빈 그림으로 바꿉니다.</li>
-        <li>한글(.hwp)과 PDF는 글자만 추출해 텍스트(.txt)로 저장합니다. 원래 레이아웃은 유지되지 않아요.</li>
+        <li>PDF는 기본으로 <b>개인정보 자리를 검게 칠한 PDF</b>로 저장합니다. 레이아웃은 그대로지만 쪽마다 그림이라 글자를 선택할 수 없어요. 「PDF 결과」에서 텍스트(.txt)를 고를 수도 있어요.</li>
+        <li>한글(.hwp)은 글자만 추출해 텍스트(.txt)로 저장합니다.</li>
         <li>스캔본 PDF는 OCR로 글자를 읽습니다. 처음 한 번 OCR 엔진(약 9MB)을 받느라 시간이 걸리고, <b>잘못 읽은 글자가 있으면 그 부분은 가려지지 않을 수 있으니</b> 결과를 꼭 확인하세요.</li>
         <li>이미지 속 글자, Excel의 차트·도형 글자, 시트 이름, 수식은 가리지 않습니다. 대신 마스킹이 끝나면 파일 전체를 다시 검사해서 남은 항목을 알려 드려요.</li>
         <li>이름은 자동으로 찾을 수 없으니 “추가로 가릴 단어”에 꼭 입력하세요.</li>
@@ -330,7 +336,7 @@ h2 .mini{margin-left:auto;padding:5px 12px;font-size:13px;font-weight:600;border
     <details class="qa">
       <summary><span class="q">Q</span><span class="t">어떤 파일과 브라우저에서 쓸 수 있나요?</span><span class="chev" aria-hidden="true">▾</span></summary>
       <div class="a"><ul>
-<li><b>파일:</b> Word(.docx), Excel(.xlsx), 한글(.hwpx, .hwp), PDF(스캔본은 OCR), 텍스트 파일(.txt, .csv 등). 한글 .hwp와 PDF는 글자만 뽑아 텍스트 파일로 저장합니다.</li>
+<li><b>파일:</b> Word(.docx), Excel(.xlsx), 한글(.hwpx, .hwp), PDF(스캔본은 OCR), 텍스트 파일(.txt, .csv 등). PDF는 개인정보 자리를 검게 칠한 PDF(또는 텍스트 파일)로, 한글 .hwp는 글자만 뽑아 텍스트 파일로 저장합니다.</li>
 <li><b>지원하지 않는 파일:</b> 구버전 .doc·.xls, 비밀번호·배포용 한글 문서, 이미지 파일. 구버전 파일은 .docx·.xlsx로 저장한 뒤 사용하세요.</li>
 <li><b>브라우저:</b> 최신 Chrome이나 Edge를 권장합니다. Safari와 Firefox에서는 확인하지 않았어요.</li>
 </ul></div>
@@ -770,15 +776,6 @@ function ocrWorker(){
     .then(()=>Tesseract.createWorker('kor+eng',1,{workerPath:'ocr/worker.min.js',corePath:'ocr/tesseract-core-simd-lstm.wasm.js',langPath:'ocr',workerBlobURL:false,cacheMethod:'none'}))
     .catch(()=>{OCR=null;throw new Error('OCR 엔진을 불러오지 못했어요. 스캔본 PDF는 배포된 페이지(https://sejin0211.github.io/pii-guard/)에서 처리해 주세요. index.html 파일을 바로 열면 브라우저 보안 때문에 OCR을 쓸 수 없어요.');}));
 }
-async function ocrPage(page){
-  const v=page.getViewport({scale:1}),vp=page.getViewport({scale:Math.min(4,3000/Math.max(v.width,v.height))});   /* 긴 변 약 3000px ≈ A4 250dpi */
-  const c=document.createElement('canvas');c.width=Math.ceil(vp.width);c.height=Math.ceil(vp.height);
-  await page.render({canvas:c,viewport:vp}).promise;
-  const text=(await (await ocrWorker()).recognize(c)).data.text;
-  c.width=c.height=0;
-  return text.replace(/(\d)[ \t]*([-.])[ \t]*(?=\d)/g,'$1$2');   /* OCR이 넣은 "010 - 1234" 같은 빈칸을 붙여 번호를 찾게 함 */
-}
-
 let PDFJS=null;
 async function loadPdfjs(){
   if(PDFJS)return PDFJS;
@@ -787,21 +784,96 @@ async function loadPdfjs(){
   PDFJS.GlobalWorkerOptions.workerSrc=url('pdf-worker');
   return PDFJS;
 }
-async function maskPdf(buf,M){
+/* PDF 한 쪽의 글자 + 글자마다 그려진 위치(가린 PDF에서 상자를 칠할 곳). 글자가 없는 쪽은 OCR로 읽음 */
+const PDF_JOIN=/(?<=[-@])\n(?=[A-Za-z0-9])|(?<=\.)\n(?=[a-z])|(?<=[A-Za-z0-9])\n(?=@)/g;   /* 줄바꿈으로 끊긴 이메일·번호 이어 붙임 */
+function dropChars(L,re){const kill=new Set();for(const m of L.t.matchAll(re))for(let i=m.index;i<m.index+m[0].length;i++)kill.add(i);
+  let t='';const map=[];for(let i=0;i<L.t.length;i++)if(!kill.has(i)){t+=L.t[i];map.push(L.map[i]);}return {t,map};}
+async function readPage(page,draw,onOcr){
+  const tc=await page.getTextContent(),isOcr=!tc.items.some(it=>it.str.trim()),v=page.getViewport({scale:1});
+  const scale=isOcr?Math.min(4,3000/Math.max(v.width,v.height)):2,vp=page.getViewport({scale});   /* OCR은 긴 변 약 3000px ≈ A4 250dpi */
+  let c=null;
+  if(draw||isOcr){c=document.createElement('canvas');c.width=Math.ceil(vp.width);c.height=Math.ceil(vp.height);
+    await page.render({canvas:c,viewport:vp,annotationMode:PDFJS.AnnotationMode.DISABLE}).promise;}   /* 양식 칸 입력값은 글자 추출에 안 잡혀 그림에 그대로 남으므로 그리지 않음 */
+  const ch=[];
+  if(!isOcr)for(const it of tc.items){
+    if(it.str){const tx=PDFJS.Util.transform(vp.transform,it.transform),h=Math.hypot(tx[2],tx[3]);
+      ch.push({s:it.str,r:{x:tx[4],y:tx[5],a:Math.atan2(tx[1],tx[0]),w:it.width*scale,h,d:h*0.25,n:it.str.length,s:it.str}});}
+    if(it.hasEOL)ch.push({s:'\n'});
+  }
+  else{
+    onOcr();
+    const lines=(await (await ocrWorker()).recognize(c,{},{blocks:true})).data.blocks.flatMap(b=>b.paragraphs.flatMap(p=>p.lines));
+    for(const l of lines){   /* 단어 사이 빈칸은 OCR의 줄 글자를 따름 ("갈매중앙로"를 "갈 매 중앙로"처럼 쪼개 돌려줘도 붙여서 검사) */
+      const lt=l.text.replace(/\n$/,'');let cur=0;
+      l.words.forEach((w,i)=>{const b=w.bbox,at=lt.indexOf(w.text,cur);
+        if(at>=0){if(at>cur)ch.push({s:lt.slice(cur,at)});cur=at+w.text.length;}else if(i)ch.push({s:' '});
+        ch.push({s:w.text,r:{x:b.x0,y:b.y1,a:0,w:b.x1-b.x0,h:b.y1-b.y0,d:0,n:w.text.length,s:w.text}});});
+      ch.push({s:'\n'});
+    }
+  }
+  let L={t:'',map:[]};
+  for(const {s,r} of ch)for(let k=0;k<s.length;k++){L.t+=s[k];L.map.push(r?{r,k}:null);}
+  if(isOcr)L=dropChars(L,/(?<=\d)[ \t]+(?=[-.][ \t]*\d)|(?<=\d[ \t]*[-.])[ \t]+(?=\d)/g);   /* OCR이 넣은 "010 - 1234" 같은 빈칸을 붙여 번호를 찾게 함 */
+  return {...dropChars(L,PDF_JOIN),c,isOcr};
+}
+/* 가린 PDF: 바뀐 글자 위치에 검은 상자. 길이가 같으면(일부만 가리기·별표) 바뀐 글자만, 이름표 방식이면 상자 안에 이름표 */
+function cover(ctx,map,parts){
+  let pos=0;
+  for(const p of parts){
+    const n=p[0].length;
+    if(p.length>1&&p[0]!==p[1]){
+      const same=p[1].length===n,box=new Map();
+      for(let k=0;k<n;k++){const m=map[pos+k];if(!m||same&&p[1][k]===p[0][k])continue;const b=box.get(m.r);box.set(m.r,b?[Math.min(b[0],m.k),Math.max(b[1],m.k)]:[m.k,m.k]);}
+      let label=same?'':p[1];
+      box.forEach(([a,z],r)=>{
+        ctx.font='100px sans-serif';const fw=k=>ctx.measureText(r.s.slice(0,k)).width,all=fw(r.n)||1;   /* 한글·숫자 폭이 달라 글자 폭 비율로 위치 추정 */
+        const pad=r.h*0.15,x=r.w*fw(a)/all-pad,w=r.w*(fw(z+1)-fw(a))/all+2*pad;   /* 추정이라 넉넉하게 */
+        ctx.save();ctx.translate(r.x,r.y);ctx.rotate(r.a);ctx.fillStyle='#000';ctx.fillRect(x,-r.h-pad,w,r.h+r.d+2*pad);
+        if(label){let fs=r.h*0.8;ctx.font=fs+'px sans-serif';while(fs>6&&ctx.measureText(label).width>w-pad){fs--;ctx.font=fs+'px sans-serif';}
+          ctx.fillStyle='#fff';ctx.fillText(label,x+pad/2,0,w-pad);label='';}
+        ctx.restore();
+      });
+    }
+    pos+=n;
+  }
+}
+/* 쪽마다 JPEG 그림 한 장인 PDF (글자층이 없어 원래 글자가 남지 않음) */
+function imagesToPdf(pages){
+  const enc=new TextEncoder(),parts=[],off=[];let len=0;
+  const add=x=>{const b=typeof x==='string'?enc.encode(x):x;parts.push(b);len+=b.length;};
+  const obj=(id,dict,stream)=>{off[id]=len;add(id+' 0 obj\n'+dict+'\n');if(stream){add('stream\n');add(stream);add('\nendstream\n');}add('endobj\n');};
+  add('%PDF-1.4\n%âãÏÓ\n');
+  obj(1,'<< /Type /Catalog /Pages 2 0 R >>');
+  obj(2,'<< /Type /Pages /Kids ['+pages.map((_,i)=>(3+i*3)+' 0 R').join(' ')+'] /Count '+pages.length+' >>');
+  pages.forEach((p,i)=>{
+    const id=3+i*3,pw=p.pw.toFixed(2),ph=p.ph.toFixed(2),cs=enc.encode('q '+pw+' 0 0 '+ph+' 0 0 cm /Im0 Do Q');
+    obj(id,'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+pw+' '+ph+'] /Resources << /XObject << /Im0 '+(id+2)+' 0 R >> >> /Contents '+(id+1)+' 0 R >>');
+    obj(id+1,'<< /Length '+cs.length+' >>',cs);
+    obj(id+2,'<< /Type /XObject /Subtype /Image /Width '+p.w+' /Height '+p.h+' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+p.jpg.length+' >>',p.jpg);
+  });
+  const size=3+pages.length*3,xref=len;
+  add('xref\n0 '+size+'\n0000000000 65535 f \n'+off.slice(1).map(o=>String(o).padStart(10,'0')+' 00000 n \n').join('')+'trailer\n<< /Size '+size+' /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF\n');
+  return new Blob(parts,{type:'application/pdf'});
+}
+async function maskPdf(buf,M,asPdf){
   let lib;try{lib=await loadPdfjs();}catch{throw new Error('이 브라우저에서는 PDF를 처리할 수 없습니다. 최신 Chrome·Edge를 사용하거나 파이썬 도구를 이용하세요.');}
   let pdf;
   try{pdf=await lib.getDocument({data:new Uint8Array(buf)}).promise;}
   catch(e){throw new Error(e&&e.name==='PasswordException'?'비밀번호가 걸린 PDF예요. 비밀번호를 푼 뒤 다시 넣어 주세요.':'PDF 파일을 열 수 없어요. 파일이 손상됐을 수 있어요.');}
-  let text='',ocr=0;
+  let text='',ocr=0;const pages=[];
   for(let i=1;i<=pdf.numPages;i++){
-    const page=await pdf.getPage(i),c=await page.getTextContent();
-    let t='';for(const it of c.items)t+=it.str+(it.hasEOL?'\n':'');
-    if(!t.trim()){fmsg('스캔본 쪽을 OCR로 읽는 중… ('+i+'/'+pdf.numPages+'쪽) 처음에는 엔진을 받느라 조금 더 걸려요.');t=await ocrPage(page);ocr++;}
-    text+=t+'\n\n';
+    const page=await pdf.getPage(i),P=await readPage(page,asPdf,()=>{ocr++;fmsg('스캔본 쪽을 OCR로 읽는 중… ('+i+'/'+pdf.numPages+'쪽) 처음에는 엔진을 받느라 조금 더 걸려요.');});
+    if(asPdf){
+      const parts=M.parts(P.t),v=page.getViewport({scale:1});
+      text+=parts.map(p=>p[p.length-1]).join('')+'\n\n';
+      cover(P.c.getContext('2d'),P.map,parts);
+      const jpg=await new Promise(r=>P.c.toBlob(r,'image/jpeg',0.85));
+      pages.push({jpg:new Uint8Array(await jpg.arrayBuffer()),w:P.c.width,h:P.c.height,pw:v.width,ph:v.height});
+    }else text+=P.t+'\n\n';
+    if(P.c)P.c.width=P.c.height=0;
   }
   if(!text.trim())throw new Error('PDF에서 글자를 찾지 못했어요. OCR로도 읽을 수 있는 글자가 없었어요.');
-  text=text.replace(/(?<=[-@])\n(?=[A-Za-z0-9])|(?<=\.)\n(?=[a-z])|(?<=[A-Za-z0-9])\n(?=@)/g,'');  /* 줄바꿈으로 끊긴 이메일·번호 이어 붙임 */
-  return {text:M.fn(text),ocr};
+  return asPdf?{text,ocr,blob:imagesToPdf(pages)}:{text:M.fn(text),ocr};
 }
 function readText(buf){
   const b=new Uint8Array(buf,0,Math.min(2,buf.byteLength));   /* 엑셀 '유니코드 텍스트' 등 UTF-16 파일 */
@@ -835,7 +907,7 @@ $('fgo').onclick=async()=>{
   if(!FILES.length)return fmsg('파일을 먼저 선택하세요.','err');
   const cats=enabledSet('cats-f'),words=$('fwords').value,mode=$('fmode').value;
   if(!cats.size&&!words.trim())return fmsg('가릴 항목이 하나도 켜져 있지 않습니다.','err');
-  const M=makeMasker(mode,words,cats),meta=$('fmeta').checked;
+  const M=makeMasker(mode,words,cats),meta=$('fmeta').checked,asPdf=$('fpdf').value==='pdf';
   $('fres').replaceChildren();fmsg('처리 중…');
   $('fgo').disabled=true;
   let ok=0,warn=0;
@@ -848,8 +920,10 @@ $('fgo').onclick=async()=>{
       else if(ext==='xlsx'){blob=await maskXlsx(buf,M,meta);name=base+'_masked.xlsx';}
       else if(ext==='hwpx'){blob=await maskHwpx(buf,M,meta);name=base+'_masked.hwpx';}
       else if(ext==='hwp'){text=M.fn(await hwpText(buf));blob=new Blob([text],{type:'text/plain'});name=base+'_hwp_masked.txt';note=' · 글자만 추출해 .txt로 저장 (서식을 유지하려면 한글에서 .hwpx로 저장해 넣으세요)';}
-      else if(ext==='pdf'){const r=await maskPdf(buf,M);text=r.text;blob=new Blob([text],{type:'text/plain'});name=base+'_pdf_masked.txt';
-        note=' · 글자만 추출해 .txt로 저장'+(r.ocr?' · '+r.ocr+'쪽은 OCR로 읽음 — 잘못 읽은 글자는 가려지지 않을 수 있으니 꼭 확인하세요':'');}
+      else if(ext==='pdf'){const r=await maskPdf(buf,M,asPdf);text=r.text;
+        if(asPdf){blob=r.blob;name=base+'_masked.pdf';note=' · 개인정보 자리를 검게 칠한 그림 PDF로 저장 (글자 선택은 안 돼요)';}
+        else{blob=new Blob([text],{type:'text/plain'});name=base+'_pdf_masked.txt';note=' · 글자만 추출해 .txt로 저장';}
+        if(r.ocr)note+=' · '+r.ocr+'쪽은 OCR로 읽음 — 잘못 읽은 글자는 가려지지 않을 수 있으니 꼭 확인하세요';}
       else if(/^(txt|csv|md|json|log|tsv)$/.test(ext)){const r=readText(buf);text=M.fn(r.text);blob=new Blob([(ext==='csv'?String.fromCharCode(0xFEFF):'')+text],{type:'text/plain'});  /* CSV는 BOM을 붙여야 엑셀에서 한글이 안 깨짐 */name=base+'_masked.'+ext;note=r.note?' · '+r.note:'';}
       else throw new Error('지원하지 않는 형식입니다. (.doc, .xls는 .docx, .xlsx로 저장한 뒤 사용하세요)');
       const d={};for(const k in M.found){const n=M.found[k]-(before[k]||0);if(n)d[k]=n;}
