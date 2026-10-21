@@ -161,8 +161,8 @@ h2 .mini{margin-left:auto;padding:5px 12px;font-size:13px;font-weight:600;border
     <p>질문이나 문서 속 주민등록번호·연락처·계좌번호를 자동으로 찾아 가리고, AI 답변에서는 원래 정보로 되돌릴 수 있습니다.</p>
     <ul class="chips">
       <li>🔒 서버로 전송하지 않음</li>
-      <li>🔍 9종 자동 탐지</li>
-      <li>📄 Word·Excel·PDF 파일 지원</li>
+      <li>🔍 10종 자동 탐지</li>
+      <li>📄 Word·Excel·한글·PDF 파일 지원</li>
     </ul>
     <div class="tabs" role="tablist">
       <button role="tab" aria-selected="true" data-t="t">1. 텍스트 마스킹</button>
@@ -179,7 +179,7 @@ h2 .mini{margin-left:auto;padding:5px 12px;font-size:13px;font-weight:600;border
       <textarea id="src" placeholder="여기에 붙여넣거나 아래에서 텍스트 파일을 불러오세요."></textarea>
       <label for="tf">텍스트 파일 불러오기</label>
       <input type="file" id="tf" accept=".txt,.csv,.md,.json,.log,.tsv">
-      <p class="note">Word, Excel, PDF 파일은 위쪽 “2. 파일 마스킹” 탭에서 처리하세요.</p>
+      <p class="note">Word, Excel, 한글, PDF 파일은 위쪽 “2. 파일 마스킹” 탭에서 처리하세요.</p>
     </section>
 
     <section class="card">
@@ -243,12 +243,12 @@ h2 .mini{margin-left:auto;padding:5px 12px;font-size:13px;font-weight:600;border
     <section class="card">
       <h2><i>1</i>파일 선택 <button type="button" class="g mini" id="sampleF">🧪 샘플 파일로 해보기</button></h2>
       <label class="drop" id="drop">
-        <input type="file" id="ff" class="sr" multiple accept=".docx,.xlsx,.pdf,.txt,.csv,.md,.json,.log,.tsv">
+        <input type="file" id="ff" class="sr" multiple accept=".docx,.xlsx,.hwpx,.hwp,.pdf,.txt,.csv,.md,.json,.log,.tsv">
         <b>파일을 끌어다 놓거나 클릭해서 선택하세요</b>
-        <span>Word(.docx) · Excel(.xlsx) · PDF · 텍스트 파일 · 여러 개 가능</span>
+        <span>Word(.docx) · Excel(.xlsx) · 한글(.hwpx, .hwp) · PDF(스캔본 포함) · 텍스트 파일 · 여러 개 가능</span>
       </label>
       <ul class="flist" id="flist"></ul>
-      <p class="note">구버전 형식(.doc, .xls)은 .docx, .xlsx로 저장한 뒤 사용하세요.</p>
+      <p class="note">구버전 형식(.doc, .xls)은 .docx, .xlsx로 저장한 뒤 사용하세요. 한글 파일의 서식을 유지하려면 한글에서 <b>.hwpx로 저장</b>해 넣으세요.</p>
     </section>
     <section class="card">
       <h2><i>2</i>가릴 항목 설정</h2>
@@ -261,7 +261,7 @@ h2 .mini{margin-left:auto;padding:5px 12px;font-size:13px;font-weight:600;border
         <option value="star">별표(*)로 치환 — 복원 불가</option>
       </select>
       <div class="tags" id="cats-f">자동 탐지 · 눌러서 끄고 켜기:</div>
-      <label class="chk"><input type="checkbox" id="fmeta" checked><span>문서 속성(작성자, 마지막 수정자, 회사)도 지우기 <small style="color:var(--mut)">— Word·Excel</small></span></label>
+      <label class="chk"><input type="checkbox" id="fmeta" checked><span>문서 속성(작성자, 마지막 수정자, 회사)도 지우기 <small style="color:var(--mut)">— Word·Excel·한글(.hwpx)</small></span></label>
     </section>
     <button class="b big" id="fgo">파일 마스킹하기</button>
   </div>
@@ -275,7 +275,9 @@ h2 .mini{margin-left:auto;padding:5px 12px;font-size:13px;font-weight:600;border
       <h2><i>!</i>알아두세요</h2>
       <ul class="tips">
         <li>Word·Excel은 서식을 그대로 두고 내용만 가립니다. (Word: 본문·표·머리글·바닥글·각주·댓글·텍스트 상자·링크 주소 / Excel: 셀·메모·링크 주소)</li>
-        <li>PDF는 글자만 추출해 텍스트(.txt)로 저장합니다. 원래 레이아웃은 유지되지 않고, 스캔본은 처리할 수 없습니다.</li>
+        <li>한글(.hwpx)은 서식을 그대로 두고 본문·표·머리말·각주·필드 값을 가립니다. 첫 쪽 미리보기 그림은 개인정보가 보일 수 있어 빈 그림으로 바꿉니다.</li>
+        <li>한글(.hwp)과 PDF는 글자만 추출해 텍스트(.txt)로 저장합니다. 원래 레이아웃은 유지되지 않아요.</li>
+        <li>스캔본 PDF는 OCR로 글자를 읽습니다. 처음 한 번 OCR 엔진(약 9MB)을 받느라 시간이 걸리고, <b>잘못 읽은 글자가 있으면 그 부분은 가려지지 않을 수 있으니</b> 결과를 꼭 확인하세요.</li>
         <li>이미지 속 글자, Excel의 차트·도형 글자, 시트 이름, 수식은 가리지 않습니다. 대신 마스킹이 끝나면 파일 전체를 다시 검사해서 남은 항목을 알려 드려요.</li>
         <li>이름은 자동으로 찾을 수 없으니 “추가로 가릴 단어”에 꼭 입력하세요.</li>
         <li>정규식 기반이라 놓치는 정보가 있을 수 있습니다. 다운로드한 파일을 열어 눈으로 확인한 뒤 AI에 보내세요.</li>
@@ -328,8 +330,8 @@ h2 .mini{margin-left:auto;padding:5px 12px;font-size:13px;font-weight:600;border
     <details class="qa">
       <summary><span class="q">Q</span><span class="t">어떤 파일과 브라우저에서 쓸 수 있나요?</span><span class="chev" aria-hidden="true">▾</span></summary>
       <div class="a"><ul>
-<li><b>파일:</b> Word(.docx), Excel(.xlsx), PDF, 텍스트 파일(.txt, .csv 등). PDF는 글자만 뽑아 텍스트 파일로 저장합니다.</li>
-<li><b>지원하지 않는 파일:</b> 한글(.hwp, .hwpx), 구버전 .doc·.xls, 스캔본 PDF, 이미지. 구버전 파일은 .docx·.xlsx로 저장한 뒤 사용하세요.</li>
+<li><b>파일:</b> Word(.docx), Excel(.xlsx), 한글(.hwpx, .hwp), PDF(스캔본은 OCR), 텍스트 파일(.txt, .csv 등). 한글 .hwp와 PDF는 글자만 뽑아 텍스트 파일로 저장합니다.</li>
+<li><b>지원하지 않는 파일:</b> 구버전 .doc·.xls, 비밀번호·배포용 한글 문서, 이미지 파일. 구버전 파일은 .docx·.xlsx로 저장한 뒤 사용하세요.</li>
 <li><b>브라우저:</b> 최신 Chrome이나 Edge를 권장합니다. Safari와 Firefox에서는 확인하지 않았어요.</li>
 </ul></div>
     </details>
@@ -351,7 +353,7 @@ h2 .mini{margin-left:auto;padding:5px 12px;font-size:13px;font-weight:600;border
   </div>
 </footer>
 
-<!-- 포함된 라이브러리: JSZip(MIT/GPLv3), pdf.js(Apache-2.0) -->
+<!-- 포함된 라이브러리: JSZip(MIT/GPLv3), pdf.js(Apache-2.0). 스캔본 PDF OCR은 처음 쓸 때 ocr/ 폴더에서 불러옴: tesseract.js·tesseract.js-core(Apache-2.0), 한국어 학습 데이터(Apache-2.0) -->
 <script>/*!
 
 JSZip v3.10.1 - A JavaScript class for generating and reading zip files
@@ -445,7 +447,7 @@ const RULES=[   /* pii_guard.py의 RULES와 정규식이 같아야 함 (tests/te
   ['IP주소',/(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?!\d|\.\d)/g],
   ['계좌번호',/(?<!\d)\d{2,6}-\d{2,6}-\d{2,8}(?:-\d{1,4})?(?!\d)/g],
   /* 도로명·지번 주소. 시·도와 시·군·구가 둘 다 있으면 그대로, 하나만 있으면 동·층·호(709-702 포함)까지 있어야 함 ("경기 결과로 3배" 같은 오탐 방지) */
-  ['주소',/(?<![가-힣])(?:(?:서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충청북|충청남|충북|충남|전라북|전라남|전북|전남|경상북|경상남|경북|경남|제주)(?:특별시|광역시|특별자치시|특별자치도|도|시)?\s+(?:[가-힣]+(?:시|군|구)\s+){1,2}(?:[가-힣]+(?:읍|면)\s+)?[가-힣0-9]+(?:로|길|동|리|가)\s*\d+(?:-\d+)?(?:번지)?(?!\d)(?:,?\s*[0-9A-Za-z]+동(?:\s*\d+층)?(?:\s*[0-9A-Za-z-]+호)?|,?\s*\d+층(?:\s*[0-9A-Za-z-]+호)?|,?\s*[0-9A-Za-z-]+호|,?\s*\d{1,4}-\d{1,4}(?![\d-]))?|(?:(?:서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충청북|충청남|충북|충남|전라북|전라남|전북|전남|경상북|경상남|경북|경남|제주)(?:특별시|광역시|특별자치시|특별자치도|도|시)?\s+|(?:[가-힣]+(?:시|군|구)\s+){1,2})(?:[가-힣]+(?:읍|면)\s+)?[가-힣0-9]+(?:로|길|동|리|가)\s*\d+(?:-\d+)?(?:번지)?(?!\d)(?:,?\s*[0-9A-Za-z]+동(?:\s*\d+층)?(?:\s*[0-9A-Za-z-]+호)?|,?\s*\d+층(?:\s*[0-9A-Za-z-]+호)?|,?\s*[0-9A-Za-z-]+호|,?\s*\d{1,4}-\d{1,4}(?![\d-])))/g]
+  ['주소',/(?<![가-힣])(?:(?:서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충청북|충청남|충북|충남|전라북|전라남|전북|전남|경상북|경상남|경북|경남|제주)(?:특별시|광역시|특별자치시|특별자치도|도|시)?\s+(?:[가-힣]+(?:시|군|구)\s+){1,2}(?:[가-힣]+(?:읍|면)\s+)?[가-힣0-9]+(?:로|길|동|리|가)(?:\s*\d+번?길)?\s*\d+(?:-\d+)?(?:번지)?(?!\d)(?:,?\s*[0-9A-Za-z]+동(?:\s*\d+층)?(?:\s*[0-9A-Za-z-]+호)?|,?\s*\d+층(?:\s*[0-9A-Za-z-]+호)?|,?\s*[0-9A-Za-z-]+호|,?\s*\d{1,4}-\d{1,4}(?![\d-]))?|(?:(?:서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충청북|충청남|충북|충남|전라북|전라남|전북|전남|경상북|경상남|경북|경남|제주)(?:특별시|광역시|특별자치시|특별자치도|도|시)?\s+|(?:[가-힣]+(?:시|군|구)\s+){1,2})(?:[가-힣]+(?:읍|면)\s+)?[가-힣0-9]+(?:로|길|동|리|가)(?:\s*\d+번?길)?\s*\d+(?:-\d+)?(?:번지)?(?!\d)(?:,?\s*[0-9A-Za-z]+동(?:\s*\d+층)?(?:\s*[0-9A-Za-z-]+호)?|,?\s*\d+층(?:\s*[0-9A-Za-z-]+호)?|,?\s*[0-9A-Za-z-]+호|,?\s*\d{1,4}-\d{1,4}(?![\d-])))/g]
 ];
 /* 토큰 번호는 이 페이지를 열어 둔 동안 텍스트·파일 전체에서 공유 → 어디서든 복원 가능 */
 const SES={seen:{},cnt:{},map:{}};
@@ -592,7 +594,7 @@ function maskGroup(ts,M){
   ts.forEach((t,i)=>{
     if(out[i]===o[i])return;
     t.textContent=out[i];
-    t.setAttributeNS('http://www.w3.org/XML/1998/namespace','xml:space','preserve');
+    if(t.nodeType===1)t.setAttributeNS('http://www.w3.org/XML/1998/namespace','xml:space','preserve');   /* 한글(.hwpx)은 글자 조각(Text 노드)이 옴 */
   });
 }
 async function stripMeta(zip){
@@ -613,16 +615,18 @@ async function maskRels(zip,M){
     }));
   }
 }
+/* 글자가 들어 있을 수 있는 속성: 재검사가 보고, 한글(.hwpx)은 가림 */
+const ATTR_TEXT=['name','descr','title','alias','tag','tooltip','display','instr','author','userId'];
 /* 결과 파일 전체(모든 XML과 링크 주소)에서 글자를 뽑아 재검사용으로 사용 */
 async function zipText(blob){
   const zip=await JSZip.loadAsync(blob);let t='';
   for(const n of Object.keys(zip.files)){
-    if(zip.files[n].dir||!/\.(xml|rels)$/i.test(n))continue;
+    if(zip.files[n].dir||!/\.(xml|rels|hpf)$/i.test(n)&&n!=='Preview/PrvText.txt')continue;   /* hpf·PrvText: 한글(.hwpx) 문서 정보·미리보기 글자 */
     const x=await zip.file(n).async('string');
     t+='\n'+x.replace(/<[^>]+>/g,' ');
     for(const m of x.matchAll(/Target="([^"]*)"/g)){try{t+='\n'+decodeURIComponent(m[1]);}catch{t+='\n'+m[1];}}
     /* 시트 이름, 그림 대체 텍스트, 링크 설명 등 속성 값에 숨은 정보 */
-    for(const m of x.matchAll(/[\s:](?:name|descr|title|alias|tag|tooltip|display|instr|author|userId)="([^"]*)"/g))t+='\n'+m[1];
+    for(const m of x.matchAll(new RegExp('[\\s:](?:'+ATTR_TEXT.join('|')+')="([^"]*)"','g')))t+='\n'+m[1];
   }
   return t.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;|&#39;/g,"'").replace(/&amp;/g,'&');
 }
@@ -676,6 +680,105 @@ async function maskXlsx(buf,M,meta){
   if(meta)await stripMeta(zip);
   return zip.generateAsync({type:'blob',compression:'DEFLATE',mimeType:OUT.xlsx});
 }
+/* 한글(.hwpx): Word처럼 압축된 XML. 서식은 그대로 두고 본문·표·머리말·각주(<hp:t>)와 필드 값·문서 정보의 글자를 가림 */
+const BLANK_PNG='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGP4DwABAQEAsTj2FAAAAABJRU5ErkJggg==';
+async function maskHwpx(buf,M,meta){
+  const zip=await openZip(buf);
+  const nearestP=x=>{let e=x.parentNode;while(e&&e.localName!=='p')e=e.parentNode;return e;};
+  for(const n of Object.keys(zip.files)){
+    if(/\.(xml|hpf)$/.test(n)){
+      try{await editXml(zip,n,d=>{
+        const groups=new Map(),w=d.createTreeWalker(d,NodeFilter.SHOW_TEXT);
+        for(let x;(x=w.nextNode());){
+          if(x.parentNode.localName==='t'){const p=nearestP(x.parentNode);if(!groups.has(p))groups.set(p,[]);groups.get(p).push(x);}
+          else if(!/wstring:\d/.test(x.nodeValue)){const y=M.fn(x.nodeValue);if(y!==x.nodeValue)x.nodeValue=y;}   /* 누름틀 Command는 글자 수가 함께 적혀 있어 건드리지 않음 (남으면 재검사가 알려 줌) */
+        }
+        groups.forEach(ts=>maskGroup(ts,M));
+        for(const e of d.getElementsByTagName('*')){
+          for(const a of e.attributes)if(ATTR_TEXT.includes(a.localName)){const x=M.fn(a.value);if(x!==a.value)a.value=x;}
+          if(meta&&e.localName==='meta'&&['creator','lastsaveby'].includes(e.getAttribute('name')))e.textContent='';   /* 작성자, 마지막 저장한 사람 */
+        }
+      });}catch{throw new Error('한글 파일을 읽을 수 없어요. 비밀번호가 걸렸거나 손상된 파일일 수 있어요.');}
+    }
+    else if(n==='Preview/PrvText.txt')zip.file(n,M.fn(await zip.file(n).async('string')));   /* 탐색기 미리보기용 본문 글자 */
+    else if(n==='Preview/PrvImage.png')zip.file(n,BLANK_PNG,{base64:true});   /* 첫 쪽을 찍은 그림이라 개인정보가 그대로 보임 → 빈 그림 */
+  }
+  const mt=zip.file('mimetype');
+  if(mt)zip.file('mimetype',await mt.async('string'),{compression:'STORE'});   /* 규격상 압축하지 않은 채 맨 앞에 있어야 함 */
+  for(const p in zip.files)if(zip.files[p].dir)delete zip.files[p];   /* JSZip이 덧붙인 폴더 항목 빼기 (원본 hwpx에는 없음) */
+  return zip.generateAsync({type:'blob',compression:'DEFLATE',mimeType:'application/hwp+zip'});
+}
+
+/* 한글(.hwp): OLE 복합 파일 안의 BodyText/SectionN에서 글자만 뽑아 .txt로 (서식을 유지하려면 .hwpx로 저장해서 넣기) */
+function oleStreams(buf){
+  const u=new Uint8Array(buf),v=new DataView(buf),u32=o=>v.getUint32(o,true),END=0xFFFFFFFA;
+  if(u.length<512||u32(0)!==0xE011CFD0||u32(4)!==0xE11AB1A1)throw new Error('한글(.hwp) 파일이 아니거나 손상됐어요.');
+  const ss=1<<v.getUint16(30,true),ms=1<<v.getUint16(32,true),at=s=>(s+1)*ss;
+  const difat=[];for(let i=0;i<109;i++)difat.push(u32(76+i*4));
+  for(let s=u32(68),n=u32(72);n-->0&&s<END;s=u32(at(s)+ss-4))for(let i=0;i<ss/4-1;i++)difat.push(u32(at(s)+i*4));
+  const fat=[];for(const s of difat)if(s<END)for(let i=0;i<ss/4;i++)fat.push(u32(at(s)+i*4));
+  const chain=(s,t)=>{const r=[];while(s<END&&s<t.length&&r.length<t.length){r.push(s);s=t[s];}return r;};   /* 고리 모양 손상 방지 */
+  const gather=(ids,src,size,len,off)=>{const o=new Uint8Array(size??ids.length*len);ids.forEach((s,i)=>{const p=i*len;if(p<o.length)o.set(src.subarray(off(s),off(s)+Math.min(len,o.length-p)),p);});return o;};
+  const big=(s,size)=>gather(chain(s,fat),u,size,ss,at);
+  const dir=big(u32(48)),dv=new DataView(dir.buffer),E=[];
+  for(let o=0;o+128<=dir.length;o+=128)E.push({name:new TextDecoder('utf-16le').decode(dir.subarray(o,o+Math.max(0,dv.getUint16(o+64,true)-2))),
+    type:dir[o+66],l:dv.getUint32(o+68,true),r:dv.getUint32(o+72,true),c:dv.getUint32(o+76,true),start:dv.getUint32(o+116,true),size:dv.getUint32(o+120,true)});
+  const minifat=new Uint32Array(big(u32(60)).buffer),mini=E[0]?big(E[0].start,E[0].size):new Uint8Array(0),cut=u32(56);
+  const read=e=>e.size<cut?gather(chain(e.start,minifat),mini,e.size,ms,s=>s*ms):big(e.start,e.size);
+  const out=new Map(),seen=new Set();
+  const walk=(i,pre)=>{if(i>=E.length||seen.has(i))return;seen.add(i);const e=E[i];walk(e.l,pre);walk(e.r,pre);
+    if(e.type===2)out.set(pre+e.name,()=>read(e));else if(e.type===1)walk(e.c,pre+e.name+'/');};
+  if(E[0])walk(E[0].c,'');
+  return out;
+}
+async function inflateRaw(u8){
+  const ds=new DecompressionStream('deflate-raw'),w=ds.writable.getWriter();
+  w.write(u8).catch(()=>{});w.close().catch(()=>{});
+  const r=ds.readable.getReader(),parts=[];
+  try{for(;;){const {done,value}=await r.read();if(done)break;parts.push(value);}}catch(e){if(!parts.length)throw e;}   /* 압축 데이터 뒤에 덧붙은 바이트는 무시 */
+  return new Uint8Array(await new Blob(parts).arrayBuffer());
+}
+const HWP_CHAR1=[0,10,13,24,25,26,27,28,29,30,31];   /* 1글자짜리 제어 문자. 나머지 제어 문자(1~31)는 8글자(16바이트) 차지 */
+function hwpParaText(d){
+  const v=new DataView(d.buffer,d.byteOffset,d.byteLength);let out='',i=0;
+  while(i+4<=d.length){
+    const h=v.getUint32(i,true);i+=4;let size=h>>>20;
+    if(size===0xFFF){size=v.getUint32(i,true);i+=4;}
+    if((h&0x3FF)===67)for(let k=i,end=Math.min(i+size,d.length);k+1<end;){   /* 67: 문단 글자(HWPTAG_PARA_TEXT), UTF-16 */
+      const c=v.getUint16(k,true);
+      if(c>=32)out+=String.fromCharCode(c);else if(c===9)out+='\t';else if(c===10||c===13)out+='\n';
+      k+=c>=32||HWP_CHAR1.includes(c)?2:16;
+    }
+    i+=size;
+  }
+  return out;
+}
+async function hwpText(buf){
+  const s=oleStreams(buf),h=s.get('FileHeader')?.();
+  if(!h||new TextDecoder().decode(h.subarray(0,17))!=='HWP Document File')throw new Error('한글(.hwp) 파일이 아니거나 손상됐어요.');
+  const flags=new DataView(h.buffer,h.byteOffset,h.byteLength).getUint32(36,true);
+  if(flags&0x516)throw new Error('비밀번호·배포용·보안 문서는 글자를 읽을 수 없어요. 한글에서 풀어서 일반 문서로 저장한 뒤 넣어 주세요.');   /* 암호, 배포용, DRM, 공인인증서 암호화 */
+  let text='';
+  for(let i=0;s.has('BodyText/Section'+i);i++){let d=s.get('BodyText/Section'+i)();if(flags&1)d=await inflateRaw(d);text+=hwpParaText(d);}
+  return text;
+}
+
+/* 스캔본 PDF: 글자가 없는 쪽만 OCR(tesseract.js, 한국어+영어: 이메일 등 영문은 영어 데이터가 있어야 읽힘)로 읽음. 엔진은 ocr/ 폴더에서 처음 쓸 때만 불러옴 (외부 서버 요청 없음) */
+let OCR=null;
+function ocrWorker(){
+  return OCR||(OCR=new Promise((ok,no)=>{const s=document.createElement('script');s.src='ocr/tesseract.min.js';s.onload=ok;s.onerror=no;document.head.append(s);})
+    .then(()=>Tesseract.createWorker('kor+eng',1,{workerPath:'ocr/worker.min.js',corePath:'ocr/tesseract-core-simd-lstm.wasm.js',langPath:'ocr',workerBlobURL:false,cacheMethod:'none'}))
+    .catch(()=>{OCR=null;throw new Error('OCR 엔진을 불러오지 못했어요. 스캔본 PDF는 배포된 페이지(https://sejin0211.github.io/pii-guard/)에서 처리해 주세요. index.html 파일을 바로 열면 브라우저 보안 때문에 OCR을 쓸 수 없어요.');}));
+}
+async function ocrPage(page){
+  const v=page.getViewport({scale:1}),vp=page.getViewport({scale:Math.min(4,3000/Math.max(v.width,v.height))});   /* 긴 변 약 3000px ≈ A4 250dpi */
+  const c=document.createElement('canvas');c.width=Math.ceil(vp.width);c.height=Math.ceil(vp.height);
+  await page.render({canvas:c,viewport:vp}).promise;
+  const text=(await (await ocrWorker()).recognize(c)).data.text;
+  c.width=c.height=0;
+  return text.replace(/(\d)[ \t]*([-.])[ \t]*(?=\d)/g,'$1$2');   /* OCR이 넣은 "010 - 1234" 같은 빈칸을 붙여 번호를 찾게 함 */
+}
+
 let PDFJS=null;
 async function loadPdfjs(){
   if(PDFJS)return PDFJS;
@@ -689,15 +792,16 @@ async function maskPdf(buf,M){
   let pdf;
   try{pdf=await lib.getDocument({data:new Uint8Array(buf)}).promise;}
   catch(e){throw new Error(e&&e.name==='PasswordException'?'비밀번호가 걸린 PDF예요. 비밀번호를 푼 뒤 다시 넣어 주세요.':'PDF 파일을 열 수 없어요. 파일이 손상됐을 수 있어요.');}
-  let text='';
+  let text='',ocr=0;
   for(let i=1;i<=pdf.numPages;i++){
-    const c=await (await pdf.getPage(i)).getTextContent();
-    for(const it of c.items)text+=it.str+(it.hasEOL?'\n':'');
-    text+='\n\n';
+    const page=await pdf.getPage(i),c=await page.getTextContent();
+    let t='';for(const it of c.items)t+=it.str+(it.hasEOL?'\n':'');
+    if(!t.trim()){fmsg('스캔본 쪽을 OCR로 읽는 중… ('+i+'/'+pdf.numPages+'쪽) 처음에는 엔진을 받느라 조금 더 걸려요.');t=await ocrPage(page);ocr++;}
+    text+=t+'\n\n';
   }
-  if(!text.trim())throw new Error('글자가 없는 PDF(스캔본)입니다. OCR이 필요합니다.');
+  if(!text.trim())throw new Error('PDF에서 글자를 찾지 못했어요. OCR로도 읽을 수 있는 글자가 없었어요.');
   text=text.replace(/(?<=[-@])\n(?=[A-Za-z0-9])|(?<=\.)\n(?=[a-z])|(?<=[A-Za-z0-9])\n(?=@)/g,'');  /* 줄바꿈으로 끊긴 이메일·번호 이어 붙임 */
-  return new Blob([M.fn(text)],{type:'text/plain'});
+  return {text:M.fn(text),ocr};
 }
 function readText(buf){
   const b=new Uint8Array(buf,0,Math.min(2,buf.byteLength));   /* 엑셀 '유니코드 텍스트' 등 UTF-16 파일 */
@@ -742,7 +846,10 @@ $('fgo').onclick=async()=>{
       let blob,name,note='',text=null;
       if(ext==='docx'){blob=await maskDocx(buf,M,meta);name=base+'_masked.docx';}
       else if(ext==='xlsx'){blob=await maskXlsx(buf,M,meta);name=base+'_masked.xlsx';}
-      else if(ext==='pdf'){blob=await maskPdf(buf,M);text=await blob.text();name=base+'_pdf_masked.txt';note=' · 글자만 추출해 .txt로 저장';}
+      else if(ext==='hwpx'){blob=await maskHwpx(buf,M,meta);name=base+'_masked.hwpx';}
+      else if(ext==='hwp'){text=M.fn(await hwpText(buf));blob=new Blob([text],{type:'text/plain'});name=base+'_hwp_masked.txt';note=' · 글자만 추출해 .txt로 저장 (서식을 유지하려면 한글에서 .hwpx로 저장해 넣으세요)';}
+      else if(ext==='pdf'){const r=await maskPdf(buf,M);text=r.text;blob=new Blob([text],{type:'text/plain'});name=base+'_pdf_masked.txt';
+        note=' · 글자만 추출해 .txt로 저장'+(r.ocr?' · '+r.ocr+'쪽은 OCR로 읽음 — 잘못 읽은 글자는 가려지지 않을 수 있으니 꼭 확인하세요':'');}
       else if(/^(txt|csv|md|json|log|tsv)$/.test(ext)){const r=readText(buf);text=M.fn(r.text);blob=new Blob([(ext==='csv'?String.fromCharCode(0xFEFF):'')+text],{type:'text/plain'});  /* CSV는 BOM을 붙여야 엑셀에서 한글이 안 깨짐 */name=base+'_masked.'+ext;note=r.note?' · '+r.note:'';}
       else throw new Error('지원하지 않는 형식입니다. (.doc, .xls는 .docx, .xlsx로 저장한 뒤 사용하세요)');
       const d={};for(const k in M.found){const n=M.found[k]-(before[k]||0);if(n)d[k]=n;}

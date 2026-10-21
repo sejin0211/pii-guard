@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""AI에 넘기기 전 개인정보 마스킹 (Word / Excel / PDF / 텍스트) + 선택적 비밀번호 설정.
+"""AI에 넘기기 전 개인정보 마스킹 (Word / Excel / 한글 / PDF / 텍스트) + 선택적 비밀번호 설정.
 
-설치:  pip install python-docx openpyxl pypdf cryptography msoffcrypto-tool
+설치:  pip install python-docx openpyxl pypdf cryptography msoffcrypto-tool olefile
 사용:  python pii_guard.py 파일1 [파일2 ...] [--words 홍길동,김영희] [--star | --partial] [--map] [--lock | --lock-only]
 
   --words    자동으로 못 찾는 이름·회사명 등 (쉼표 구분)
@@ -10,9 +10,10 @@
   --map      토큰→원본 대응표(_map.json) 저장. 이 파일에는 개인정보가 들어 있으니 따로 보관하세요.
   --lock       원본 파일(개인정보 포함)에 열기 비밀번호를 걸어 '이름_locked.확장자'로 함께 저장 (docx, xlsx, pdf)
   --lock-only  마스킹은 하지 않고 비밀번호만 설정
-결과: 원본은 건드리지 않고 '이름_masked.확장자' 로 저장합니다. PDF는 '이름_pdf_masked.txt'(텍스트만 추출).
+결과: 원본은 건드리지 않고 '이름_masked.확장자' 로 저장합니다. 한글 .hwpx는 서식 그대로,
+      .hwp와 PDF는 글자만 뽑아 '이름_hwp_masked.txt', '이름_pdf_masked.txt'로 저장합니다. (스캔본 PDF의 OCR은 웹 도구에서)
 """
-import argparse, getpass, html, json, os, re, sys, zipfile
+import argparse, base64, getpass, html, json, os, re, sys, zipfile, zlib
 from urllib.parse import unquote
 
 N, X = r'(?<!\d)', r'(?!\d)'
@@ -33,11 +34,11 @@ RULES = [   # index.html의 RULES와 정규식이 같아야 함 (tests/test_pii_
     # 도로명·지번 주소. 시·도와 시·군·구가 둘 다 있으면 그대로, 하나만 있으면 동·층·호(709-702 포함)까지 있어야 함 ("경기 결과로 3배" 같은 오탐 방지)
     ('주소',         C(r'(?<![가-힣])(?:(?:서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충청북|충청남|충북|충남|전라북|전라남|전북|전남|경상북|경상남|경북|경남|제주)'
                        r'(?:특별시|광역시|특별자치시|특별자치도|도|시)?\s+(?:[가-힣]+(?:시|군|구)\s+){1,2}(?:[가-힣]+(?:읍|면)\s+)?[가-힣0-9]+(?:로|'
-                       r'길|동|리|가)\s*\d+(?:-\d+)?(?:번지)?(?!\d)(?:,?\s*[0-9A-Za-z]+동(?:\s*\d+층)?(?:\s*[0-9A-Za-z-]+호)'
+                       r'길|동|리|가)(?:\s*\d+번?길)?\s*\d+(?:-\d+)?(?:번지)?(?!\d)(?:,?\s*[0-9A-Za-z]+동(?:\s*\d+층)?(?:\s*[0-9A-Za-z-]+호)'
                        r'?|,?\s*\d+층(?:\s*[0-9A-Za-z-]+호)?|,?\s*[0-9A-Za-z-]+호|,?\s*\d{1,4}-\d{1,4}(?![\d-]))?|(?:(?:서울|'
                        r'부산|대구|인천|광주|대전|울산|세종|경기|강원|충청북|충청남|충북|충남|전라북|전라남|전북|전남|경상북|경상남|경북|경남|제주)(?:특별시|광역시|특별자치시|특별자치도|'
-                       r'도|시)?\s+|(?:[가-힣]+(?:시|군|구)\s+){1,2})(?:[가-힣]+(?:읍|면)\s+)?[가-힣0-9]+(?:로|길|동|리|가)\s*\d+(?:-\d+)'
-                       r'?(?:번지)?(?!\d)(?:,?\s*[0-9A-Za-z]+동(?:\s*\d+층)?(?:\s*[0-9A-Za-z-]+호)?|,?\s*\d+층(?:\s*[0-9A-Za-z-]+호)'
+                       r'도|시)?\s+|(?:[가-힣]+(?:시|군|구)\s+){1,2})(?:[가-힣]+(?:읍|면)\s+)?[가-힣0-9]+(?:로|길|동|리|가)(?:\s*\d+번?길)'
+                       r'?\s*\d+(?:-\d+)?(?:번지)?(?!\d)(?:,?\s*[0-9A-Za-z]+동(?:\s*\d+층)?(?:\s*[0-9A-Za-z-]+호)?|,?\s*\d+층(?:\s*[0-9A-Za-z-]+호)'
                        r'?|,?\s*[0-9A-Za-z-]+호|,?\s*\d{1,4}-\d{1,4}(?![\d-])))')),
 ]
 DATE = C(r'(19|20)\d{2}-\d{2}-\d{2}')  # 날짜를 계좌번호로 오인하지 않도록
@@ -140,6 +141,8 @@ class Masker:
 W = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
 DOCX_PARTS = re.compile(r'/word/(document|header\d*|footer\d*|footnotes|endnotes|comments|people)\.xml')   # people: 댓글·변경 추적 작성자 목록
 ATTRS = ('instr', 'author', 'userId')   # 속성 속 글자: 필드 코드, 작성자 이름, 작성자 계정(S::이메일::…)
+# 글자가 들어 있을 수 있는 속성: 재검사가 보고, 한글(.hwpx)은 가림 (웹의 ATTR_TEXT와 같음)
+ATTR_TEXT = ('name', 'descr', 'title', 'alias', 'tag', 'tooltip', 'display', 'instr', 'author', 'userId')
 
 
 def mask_group(ts, M):
@@ -165,9 +168,9 @@ def mask_group(ts, M):
             t.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
 
 
-def nearest_p(e):
+def nearest_p(e, tag=W + 'p'):
     e = e.getparent()
-    while e is not None and e.tag != W + 'p':
+    while e is not None and e.tag != tag:
         e = e.getparent()
     return e
 
@@ -234,6 +237,108 @@ def do_xlsx(src, dst, M):
     wb.save(dst)
 
 
+class Slot:
+    """한글(.hwpx) <hp:t> 안의 글자 조각 하나 (요소의 text, 또는 <hp:tab/> 같은 안쪽 요소 뒤의 tail).
+    mask_group이 docx의 <w:t>처럼 다룰 수 있게 text만 내어 줌."""
+    def __init__(self, e, tail):
+        self.e, self.tail = e, tail
+
+    @property
+    def text(self):
+        return self.e.tail if self.tail else self.e.text
+
+    @text.setter
+    def text(self, v):
+        setattr(self.e, 'tail' if self.tail else 'text', v)
+
+    def set(self, k, v):   # hwpx에는 xml:space가 필요 없음
+        pass
+
+
+BLANK_PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGP4DwABAQEAsTj2FAAAAABJRU5ErkJggg==')
+
+
+def do_hwpx(src, dst, M):
+    """한글(.hwpx): Word처럼 압축된 XML. 서식은 그대로 두고 본문·표·머리말·각주(<hp:t>)와 필드 값·문서 정보의 글자를 가림."""
+    from lxml import etree
+    if not zipfile.is_zipfile(src):
+        raise ValueError('한글(.hwpx) 파일이 아니거나 손상됐어요. 옛 형식(.hwp)이면 확장자를 .hwp로 넣어 주세요.')
+    with zipfile.ZipFile(src) as zi, zipfile.ZipFile(dst, 'w') as zo:
+        for info in zi.infolist():   # 원래 순서·압축 방식 그대로 (mimetype은 압축하지 않은 채 맨 앞)
+            data = zi.read(info)
+            if info.filename.endswith(('.xml', '.hpf')):
+                try:
+                    root = etree.fromstring(data)
+                except etree.XMLSyntaxError:
+                    raise ValueError('한글 파일을 읽을 수 없어요. 비밀번호가 걸렸거나 손상된 파일일 수 있어요.')
+                for p in root.iter('{*}p'):   # 문단 단위로 이어 붙여 검사 → 바꾼 값만 원래 조각에 (서식 유지)
+                    slots = []
+                    for t in p.iter('{*}t'):
+                        if nearest_p(t, p.tag) is p:
+                            slots += [Slot(t, False)] + [Slot(c, True) for c in t]
+                    mask_group(slots, M)
+                for e in root.iter('{*}*'):
+                    # 누름틀 Command는 글자 수가 함께 적혀 있어 건드리지 않음 (남으면 재검사가 알려 줌)
+                    if etree.QName(e).localname != 't' and e.text and not re.search(r'wstring:\d', e.text):
+                        e.text = M.text(e.text)
+                    for k, v in e.attrib.items():
+                        if k.rsplit('}', 1)[-1] in ATTR_TEXT:
+                            e.set(k, M.text(v))
+                data = etree.tostring(root, xml_declaration=True, encoding='UTF-8', standalone=True)
+            elif info.filename == 'Preview/PrvText.txt':   # 탐색기 미리보기용 본문 글자
+                data = M.text(data.decode('utf-8', 'replace')).encode('utf-8')
+            elif info.filename == 'Preview/PrvImage.png':   # 첫 쪽을 찍은 그림이라 개인정보가 그대로 보임 → 빈 그림
+                data = BLANK_PNG
+            zo.writestr(info, data)
+
+
+HWP_CHAR1 = {0, 10, 13, 24, 25, 26, 27, 28, 29, 30, 31}   # 1글자짜리 제어 문자. 나머지 제어 문자(1~31)는 8글자(16바이트) 차지
+
+
+def hwp_para_text(d):
+    """한글(.hwp) 본문 스트림(압축 푼 것)의 레코드에서 문단 글자(HWPTAG_PARA_TEXT, UTF-16)만 이어 붙임."""
+    out, i = bytearray(), 0
+    while i + 4 <= len(d):
+        h = int.from_bytes(d[i:i + 4], 'little'); i += 4
+        size = h >> 20
+        if size == 0xFFF:
+            size = int.from_bytes(d[i:i + 4], 'little'); i += 4
+        if h & 0x3FF == 67:
+            k, end = i, min(i + size, len(d))
+            while k + 1 < end:
+                c = d[k] | d[k + 1] << 8
+                out += d[k:k + 2] if c >= 32 else b'\t\x00' if c == 9 else b'\n\x00' if c in (10, 13) else b''
+                k += 2 if c >= 32 or c in HWP_CHAR1 else 16
+        i += size
+    return out.decode('utf-16le', 'replace')
+
+
+def hwp_text(stream):
+    """한글(.hwp) 본문 글자. stream(이름)은 OLE 복합 파일 안의 스트림 바이트(없으면 None)를 돌려주는 함수."""
+    h = stream('FileHeader') or b''
+    if not h.startswith(b'HWP Document File'):
+        raise ValueError('한글(.hwp) 파일이 아니거나 손상됐어요.')
+    flags = int.from_bytes(h[36:40], 'little')
+    if flags & 0x516:   # 암호, 배포용, DRM, 공인인증서 암호화
+        raise ValueError('비밀번호·배포용·보안 문서는 글자를 읽을 수 없어요. 한글에서 풀어서 일반 문서로 저장한 뒤 넣어 주세요.')
+    out, n = [], 0
+    while (d := stream(f'BodyText/Section{n}')) is not None:
+        out.append(hwp_para_text(zlib.decompress(d, -15) if flags & 1 else d))
+        n += 1
+    return ''.join(out)
+
+
+def do_hwp(src, dst, M):
+    """한글(.hwp): 글자만 뽑아 .txt로 (서식을 유지하려면 한글에서 .hwpx로 저장해서 넣기)."""
+    import olefile
+    if not olefile.isOleFile(src):
+        raise ValueError('한글(.hwp) 파일이 아니거나 손상됐어요. 새 형식(.hwpx)이면 확장자를 .hwpx로 넣어 주세요.')
+    with olefile.OleFileIO(src) as f:
+        text = hwp_text(lambda n: f.openstream(n).read() if f.exists(n) else None)
+    with open(dst, 'w', encoding='utf-8') as o:
+        o.write(M.text(text))
+
+
 def do_pdf(src, dst, M):
     from pypdf import PdfReader
     try:
@@ -245,7 +350,7 @@ def do_pdf(src, dst, M):
         raise ValueError('비밀번호가 걸린 PDF예요. 비밀번호를 푼 뒤 다시 넣어 주세요.')
     text = '\n\n'.join((p.extract_text() or '') for p in r.pages)
     if not text.strip():
-        raise ValueError('텍스트를 읽을 수 없는 PDF입니다(스캔본이면 OCR이 필요합니다).')
+        raise ValueError('글자가 없는 PDF(스캔본)예요. 웹 도구의 파일 마스킹에 넣으면 OCR로 글자를 읽어 처리해요.')
     # 줄바꿈으로 끊긴 이메일·번호를 이어 붙여서 놓치지 않게 함
     text = re.sub(r'(?<=[-@])\n(?=[A-Za-z0-9])|(?<=\.)\n(?=[a-z])|(?<=[A-Za-z0-9])\n(?=@)', '', text)
     with open(dst, 'w', encoding='utf-8') as o:
@@ -270,17 +375,17 @@ def do_text(src, dst, M):
 
 def leftover(dst, words):
     """결과 파일 전체를 같은 규칙으로 다시 검사해 남은 항목 수를 돌려줌 (웹 도구의 재검사와 같은 범위).
-    Word·Excel은 모든 XML 글자, 링크 주소, 시트 이름·그림 대체 텍스트 등 속성 값까지 확인."""
-    if dst.endswith(('.docx', '.xlsx')):
+    Word·Excel·한글(.hwpx)은 모든 XML 글자, 링크 주소, 시트 이름·그림 대체 텍스트 등 속성 값, 미리보기 글자까지 확인."""
+    if dst.endswith(('.docx', '.xlsx', '.hwpx')):
         parts = []
         with zipfile.ZipFile(dst) as z:
             for n in z.namelist():
-                if not n.endswith(('.xml', '.rels')):
+                if not n.endswith(('.xml', '.rels', '.hpf')) and n != 'Preview/PrvText.txt':
                     continue
                 x = z.read(n).decode('utf-8', 'replace')
                 parts.append(re.sub(r'<[^>]+>', ' ', x))
                 parts += [unquote(v) for v in re.findall(r'Target="([^"]*)"', x)]
-                parts += re.findall(r'[\s:](?:name|descr|title|alias|tag|tooltip|display|instr|author|userId)="([^"]*)"', x)
+                parts += re.findall(r'[\s:](?:' + '|'.join(ATTR_TEXT) + r')="([^"]*)"', x)
         text = html.unescape('\n'.join(parts))
     else:
         with open(dst, encoding='utf-8-sig') as i:
@@ -349,6 +454,10 @@ def main():
                 dst = base + '_masked.docx'; do_docx(f, dst, M)
             elif ext == '.xlsx':
                 dst = base + '_masked.xlsx'; do_xlsx(f, dst, M)
+            elif ext == '.hwpx':
+                dst = base + '_masked.hwpx'; do_hwpx(f, dst, M)
+            elif ext == '.hwp':
+                dst = base + '_hwp_masked.txt'; do_hwp(f, dst, M)
             elif ext == '.pdf':
                 dst = base + '_pdf_masked.txt'; do_pdf(f, dst, M)
             elif ext in ('.txt', '.csv', '.md', '.json', '.log', '.tsv'):

@@ -1,0 +1,2 @@
+# OCR 파일은 npm 원본과 바이트까지 같아야 해서(ocr/README.md의 SHA-256) 줄바꿈 변환을 하지 않음
+ocr/** -text
