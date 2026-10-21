@@ -2,10 +2,11 @@
 """AI에 넘기기 전 개인정보 마스킹 (Word / Excel / PDF / 텍스트) + 선택적 비밀번호 설정.
 
 설치:  pip install python-docx openpyxl pypdf cryptography msoffcrypto-tool
-사용:  python pii_guard.py 파일1 [파일2 ...] [--words 홍길동,김영희] [--star] [--map] [--lock | --lock-only]
+사용:  python pii_guard.py 파일1 [파일2 ...] [--words 홍길동,김영희] [--star | --partial] [--map] [--lock | --lock-only]
 
   --words    자동으로 못 찾는 이름·회사명 등 (쉼표 구분)
   --star     토큰 대신 별표(*)로 가림 (복원 불가)
+  --partial  일부만 가림 (예: 010-****-5678, 901023-1******) — 업무에 다시 쓰기 좋음, 복원 불가
   --map      토큰→원본 대응표(_map.json) 저장. 이 파일에는 개인정보가 들어 있으니 따로 보관하세요.
   --lock       원본 파일(개인정보 포함)에 열기 비밀번호를 걸어 '이름_locked.확장자'로 함께 저장 (docx, xlsx, pdf)
   --lock-only  마스킹은 하지 않고 비밀번호만 설정
@@ -29,6 +30,14 @@ RULES = [   # index.html의 RULES와 정규식이 같아야 함 (tests/test_pii_
     ('여권번호',     C(r'(?<![A-Za-z0-9])[MSROD](?:\d{8}|\d{3}[A-Z]\d{4})(?![A-Za-z0-9])')),  # 신형(2021~): M123A4567
     ('IP주소',       C(r'(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?!\d|\.\d)')),  # 문장 끝 마침표는 허용
     ('계좌번호',     C(N + r'\d{2,6}-\d{2,6}-\d{2,8}(?:-\d{1,4})?' + X)),
+    # 도로명·지번 주소. 시·군·구가 꼭 있어야 하고, 시·도가 없으면 동·층·호까지 있어야 함 ("연구 결과로 3배" 같은 오탐 방지)
+    ('주소',         C(r'(?<![가-힣])(?:(?:서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충청북|충청남|충북|충남|전라북|전라남|전북|전남|경상북|경상남|경북|경남|제주)'
+                       r'(?:특별시|광역시|특별자치시|특별자치도|도|시)?\s+(?:[가-힣]+(?:시|군|구)\s+){1,2}(?:[가-힣]+(?:읍|면)\s+)?'
+                       r'[가-힣0-9]+(?:로|길|동|리|가)\s*\d+(?:-\d+)?(?:번지)?(?!\d)'
+                       r'(?:,?\s*[0-9A-Za-z]+동(?:\s*\d+층)?(?:\s*[0-9A-Za-z-]+호)?|,?\s*\d+층(?:\s*[0-9A-Za-z-]+호)?|,?\s*[0-9A-Za-z-]+호)?'
+                       r'|(?:[가-힣]+(?:시|군|구)\s+){1,2}(?:[가-힣]+(?:읍|면)\s+)?'
+                       r'[가-힣0-9]+(?:로|길|동|리|가)\s*\d+(?:-\d+)?(?:번지)?(?!\d)'
+                       r'(?:,?\s*[0-9A-Za-z]+동(?:\s*\d+층)?(?:\s*[0-9A-Za-z-]+호)?|,?\s*\d+층(?:\s*[0-9A-Za-z-]+호)?|,?\s*[0-9A-Za-z-]+호))')),
 ]
 DATE = C(r'(19|20)\d{2}-\d{2}-\d{2}')  # 날짜를 계좌번호로 오인하지 않도록
 FW = str.maketrans('０１２３４５６７８９', '0123456789')   # 전각 숫자 → 일반 숫자 (글자 수가 같아 위치가 그대로)
@@ -36,9 +45,46 @@ PH_OPEN, PH_CLOSE = chr(0xE000), chr(0xE001)   # 찾은 값을 잠시 바꿔 두
 PH = re.compile(PH_OPEN + '([' + chr(0xE010) + '-' + chr(0xE019) + ']+)' + PH_CLOSE)
 
 
+def partial(label, m):
+    """일부만 가리기. 웹(index.html)의 partial()과 같은 결과 (예: 010-****-5678, 901023-1******)."""
+    m = m.translate(FW)
+    if label == '지정어':
+        return m[0] + '*' * (len(m) - 1) if len(m) <= 2 else m[0] + '*' * (len(m) - 2) + m[-1]
+    if label == '이메일':
+        i = m.index('@')
+        k = 2 if i > 2 else 1
+        return m[:k] + '*' * max(1, i - k) + m[i:]
+    if label == 'IP주소':
+        p = m.split('.')
+        return f'{p[0]}.{p[1]}.*.*'
+    if label == '여권번호':
+        return m[0] + '****' + m[-4:]
+    if label == '주소':   # 지역·도로명은 남기고 번지·동·호수만 가림
+        return re.sub(r'[0-9]', '*', m)
+    if label == '주민등록번호':
+        d, sep = re.sub(r'[^0-9]', '', m), re.search(r'[- ]', m)
+        return d[:6] + (sep.group(0) if sep else '') + d[6] + '******'
+    n = len(re.split(r'[-. ]', m))
+    if n >= 3:   # 첫 묶음과 마지막 묶음(최대 4자리)만 남김
+        k = -1
+
+        def grp(x):
+            nonlocal k
+            k, s = k + 1, x.group(0)
+            if k == 0:
+                return s
+            if k == n - 1:
+                return '*' * (len(s) - 4) + s[-4:] if len(s) > 4 else s
+            return '*' * len(s)
+        return re.sub(r'[0-9]+', grp, m)
+    first, ds = 4 if label == '카드번호' else 3, [i for i, c in enumerate(m) if c in '0123456789']
+    hide = set(ds[first:len(ds) - 4])
+    return ''.join('*' if i in hide else c for i, c in enumerate(m))
+
+
 class Masker:
-    def __init__(self, words=(), star=False):
-        self.star, self.map, self.seen, self.cnt, self.found = star, {}, {}, {}, {}
+    def __init__(self, words=(), star=False, part=False):
+        self.star, self.part, self.map, self.seen, self.cnt, self.found = star, part, {}, {}, {}, {}
         self.rules = list(RULES)
         ws = sorted({w.strip().translate(FW) for w in words if w.strip()}, key=len, reverse=True)
         if ws:
@@ -75,6 +121,8 @@ class Masker:
 
     def _sub(self, label, m):
         self.found[label] = self.found.get(label, 0) + 1
+        if self.part:
+            return partial(label, m)
         if self.star:
             return re.sub(r'[0-9０-９A-Za-z가-힣]', '*', m)
         key = (label, m)
@@ -270,7 +318,9 @@ def main():
     ap = argparse.ArgumentParser(description='개인정보 마스킹 + 파일 비밀번호 설정')
     ap.add_argument('files', nargs='+')
     ap.add_argument('--words', default='')
-    ap.add_argument('--star', action='store_true')
+    how = ap.add_mutually_exclusive_group()
+    how.add_argument('--star', action='store_true')
+    how.add_argument('--partial', action='store_true')
     ap.add_argument('--map', action='store_true')
     ap.add_argument('--lock', action='store_true')
     ap.add_argument('--lock-only', action='store_true')
@@ -288,7 +338,7 @@ def main():
             continue
         base, ext = os.path.splitext(f)
         ext = ext.lower()
-        M = Masker(a.words.split(','), a.star)
+        M = Masker(a.words.split(','), a.star, a.partial)
         try:
             if ext == '.docx':
                 dst = base + '_masked.docx'; do_docx(f, dst, M)
