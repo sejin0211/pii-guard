@@ -580,11 +580,12 @@ async function editXml(zip,name,fn){
 function maskGroup(ts,M){
   if(!ts.length)return;
   const o=ts.map(t=>t.textContent),parts=M.parts(o.join(''));
-  if(parts.every(p=>p.length===1))return;
+  const same=p=>p.length===1||p[0]===p[1];   /* 꺼 둔 항목처럼 바뀌지 않은 값은 원래 조각에 그대로 둠 */
+  if(parts.every(same))return;
   const owner=[];o.forEach((s,i)=>{for(let k=0;k<s.length;k++)owner.push(i);});
   const out=o.map(()=>'');let pos=0;
   for(const p of parts){
-    if(p.length===1)for(let k=0;k<p[0].length;k++)out[owner[pos+k]]+=p[0][k];
+    if(same(p))for(let k=0;k<p[0].length;k++)out[owner[pos+k]]+=p[0][k];
     else out[owner[pos]]+=p[1];
     pos+=p[0].length;
   }

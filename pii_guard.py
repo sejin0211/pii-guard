@@ -147,12 +147,13 @@ def mask_group(ts, M):
     바꿀 값은 그 값이 시작된 조각에 넣어 나머지 글자의 서식(굵게·크기 등)은 그대로 둠."""
     o = [t.text or '' for t in ts]
     parts = M.parts(''.join(o))
-    if all(len(p) == 1 for p in parts):
+    same = lambda p: len(p) == 1 or p[0] == p[1]   # 바뀌지 않은 값은 원래 조각에 그대로 둠 (웹과 같게)
+    if all(same(p) for p in parts):
         return
     owner = [i for i, s in enumerate(o) for _ in s]
     out, pos = [''] * len(o), 0
     for p in parts:
-        if len(p) == 1:
+        if same(p):
             for k, c in enumerate(p[0]):
                 out[owner[pos + k]] += c
         else:
