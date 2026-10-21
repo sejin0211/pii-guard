@@ -612,7 +612,8 @@ async function maskXlsx(buf,M,meta){
   const grp=root=>maskGroup(els(root,S,'t').filter(t=>['r','si','is','text'].includes(t.parentNode.localName)),M);
   for(const n of Object.keys(zip.files)){
     if(n==='xl/sharedStrings.xml')await editXml(zip,n,d=>els(d,S,'si').forEach(grp));
-    else if(/^xl\/comments\d*\.xml$/.test(n))await editXml(zip,n,d=>els(d,S,'comment').forEach(grp));
+    else if(/^xl\/comments[^/]*\.xml$|^xl\/comments\/[^/]+\.xml$/.test(n))await editXml(zip,n,d=>els(d,S,'comment').forEach(grp));  /* Excel: comments1.xml, 다른 도구: comments/comment1.xml */
+    else if(/^xl\/threadedComments\/[^/]+\.xml$/.test(n))await editXml(zip,n,d=>[...d.getElementsByTagName('*')].filter(e=>e.localName==='text').forEach(e=>{const s=e.textContent,x=M.fn(s);if(x!==s)e.textContent=x;}));  /* 최신 Excel의 스레드 메모 */
     else if(/^xl\/worksheets\/sheet\d+\.xml$/.test(n))await editXml(zip,n,d=>els(d,S,'c').forEach(c=>{
       const t=c.getAttribute('t');
       if(t==='inlineStr')els(c,S,'is').forEach(grp);
