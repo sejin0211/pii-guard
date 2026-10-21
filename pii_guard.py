@@ -140,7 +140,7 @@ def do_text(src, dst, M):
         text = raw.decode('utf-8-sig')
     except UnicodeDecodeError:
         text = raw.decode('cp949')   # 엑셀에서 저장한 CSV 등 EUC-KR(CP949) 파일 → UTF-8로 저장
-    with open(dst, 'w', encoding='utf-8') as o:
+    with open(dst, 'w', encoding='utf-8', newline='') as o:   # 원본 줄바꿈(\r\n 등) 그대로 유지
         o.write(M.text(text))
 
 
