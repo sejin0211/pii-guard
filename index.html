@@ -455,19 +455,28 @@ function wordsRule(raw){
 }
 /* 규칙을 순서대로 적용. 찾은 값은 잠시 보호 문자로 바꿔 두어서, 꺼 둔 항목이 다른 항목으로 잘못 가려지지 않게 함 */
 const PUA=n=>[...n.toString(16)].map(c=>String.fromCharCode(0xE010+parseInt(c,16))).join('');
-function scan(text,wordsRaw,cats,onHit){
+/* 결과는 [그대로인 조각] 또는 [찾은 값, 바꿀 값]의 목록 → Word에서 바꿀 부분만 고쳐 서식을 유지할 때 사용 */
+function scanParts(text,wordsRaw,cats,onHit){
   const rules=[...RULES],w=wordsRule(wordsRaw);if(w)rules.unshift(['지정어',w]);
   const keep=[];let s=text;
   for(const [label,re] of rules){
     const on=label==='지정어'||cats.has(label);
     s=s.replace(re,m=>{
       if(isDate(label,m))return m;
-      keep.push(onHit(label,m,on));
+      keep.push([m,onHit(label,m,on)]);
       return '\uE000'+PUA(keep.length-1)+'\uE001';
     });
   }
-  return s.replace(/\uE000([\uE010-\uE01F]+)\uE001/g,(_,x)=>keep[parseInt([...x].map(c=>(c.charCodeAt(0)-0xE010).toString(16)).join(''),16)]);
+  const parts=[];let last=0;
+  for(const x of s.matchAll(/\uE000([\uE010-\uE01F]+)\uE001/g)){
+    if(x.index>last)parts.push([s.slice(last,x.index)]);
+    parts.push(keep[parseInt([...x[1]].map(c=>(c.charCodeAt(0)-0xE010).toString(16)).join(''),16)]);
+    last=x.index+x[0].length;
+  }
+  if(last<s.length)parts.push([s.slice(last)]);
+  return parts;
 }
+const scan=(...a)=>scanParts(...a).map(p=>p[p.length-1]).join('');
 /* 일부만 가리기 */
 function maskDigits(m,first,last){const total=(m.match(/\d/g)||[]).length;let i=0;return m.replace(/\d/g,d=>{const k=i++;return k<first||k>=total-last?d:'*';});}
 function partial(label,m){
@@ -482,7 +491,7 @@ function partial(label,m){
 }
 function makeMasker(mode,wordsRaw,cats){
   const found={};
-  const fn=s=>scan(s,wordsRaw,cats,(label,m,on)=>{
+  const hit=(label,m,on)=>{
     if(!on)return m;
     found[label]=(found[label]||0)+1;
     if(mode==='star')return m.replace(/[0-9A-Za-z가-힣]/g,'*');
@@ -490,8 +499,8 @@ function makeMasker(mode,wordsRaw,cats){
     const k=label+'|'+m;
     if(!SES.seen[k]){SES.cnt[label]=(SES.cnt[label]||0)+1;SES.seen[k]='['+label+'_'+SES.cnt[label]+']';SES.map[SES.seen[k]]=m;}
     return SES.seen[k];
-  });
-  return {fn,found};
+  };
+  return {fn:s=>scan(s,wordsRaw,cats,hit),parts:s=>scanParts(s,wordsRaw,cats,hit),found};
 }
 /* 마스킹 후 재검사: 켜 둔 항목이 남아 있는지(left), 꺼 둔 항목이 얼마나 있는지(off) */
 function recheck(text,cats,wordsRaw){
@@ -555,15 +564,24 @@ async function editXml(zip,name,fn){
   const x=new XMLSerializer().serializeToString(d);   /* 브라우저가 선언문을 이미 넣은 경우 중복 방지 */
   zip.file(name,x.startsWith('<?xml')?x:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'+x);
 }
-/* 번호가 여러 조각(run)으로 나뉘어 있어도 잡도록, 한 문단의 글자를 이어 붙여 검사 */
+/* 번호가 여러 조각(run)으로 나뉘어 있어도 잡도록 한 문단의 글자를 이어 붙여 검사하고,
+   바꿀 값은 그 값이 시작된 조각에 넣어 나머지 글자의 서식(굵게·크기 등)은 그대로 둠 */
 function maskGroup(ts,M){
   if(!ts.length)return;
-  const o=ts.map(t=>t.textContent).join(''),m=M.fn(o);
-  if(m!==o){
-    ts[0].textContent=m;
-    ts[0].setAttributeNS('http://www.w3.org/XML/1998/namespace','xml:space','preserve');
-    ts.slice(1).forEach(t=>t.textContent='');
+  const o=ts.map(t=>t.textContent),parts=M.parts(o.join(''));
+  if(parts.every(p=>p.length===1))return;
+  const owner=[];o.forEach((s,i)=>{for(let k=0;k<s.length;k++)owner.push(i);});
+  const out=o.map(()=>'');let pos=0;
+  for(const p of parts){
+    if(p.length===1)for(let k=0;k<p[0].length;k++)out[owner[pos+k]]+=p[0][k];
+    else out[owner[pos]]+=p[1];
+    pos+=p[0].length;
   }
+  ts.forEach((t,i)=>{
+    if(out[i]===o[i])return;
+    t.textContent=out[i];
+    t.setAttributeNS('http://www.w3.org/XML/1998/namespace','xml:space','preserve');
+  });
 }
 async function stripMeta(zip){
   const jobs=[['docProps/core.xml',[/(<dc:creator>)[^<]*(<\/dc:creator>)/,/(<cp:lastModifiedBy>)[^<]*(<\/cp:lastModifiedBy>)/]],

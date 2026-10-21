@@ -37,9 +37,29 @@ class Masker:
             self.rules.insert(0, ('지정어', re.compile('|'.join(map(re.escape, ws)))))
 
     def text(self, s):
+        return ''.join(p[-1] for p in self.parts(s))
+
+    def parts(self, s):
+        """원문을 [그대로인 조각] 또는 [찾은 값, 바꿀 값]의 목록으로 나눔 (Word 서식 유지에 사용).
+        찾은 값은 잠시 보호 문자로 바꿔 두어 뒤의 규칙이 다시 건드리지 않게 함 (웹 도구와 같은 방식)."""
+        keep = []
+
+        def hit(label, v):
+            r = self._sub(label, v)
+            if label == '계좌번호' and r == v:   # 날짜는 그대로
+                return v
+            keep.append([v, r])
+            return '\ue000' + ''.join(chr(0xE010 + int(d)) for d in str(len(keep) - 1)) + '\ue001'
+
         for label, rx in self.rules:
-            s = rx.sub(lambda m, l=label: self._sub(l, m.group(0)), s)
-        return s
+            s = rx.sub(lambda m, l=label: hit(l, m.group(0)), s)
+        out = []
+        for i, seg in enumerate(re.split('\ue000([\ue010-\ue019]+)\ue001', s)):
+            if i % 2:
+                out.append(keep[int(''.join(str(ord(c) - 0xE010) for c in seg))])
+            elif seg:
+                out.append([seg])
+        return out
 
     def _sub(self, label, m):
         if label == '계좌번호' and DATE.fullmatch(m):
@@ -60,14 +80,25 @@ DOCX_PARTS = re.compile(r'/word/(document|header\d*|footer\d*|footnotes|endnotes
 
 
 def mask_group(ts, M):
-    """번호가 여러 조각(run)으로 나뉘어 있어도 잡도록, 한 문단의 글자를 이어 붙여 검사."""
-    o = ''.join(t.text or '' for t in ts)
-    m = M.text(o)
-    if m != o:
-        ts[0].text = m
-        ts[0].set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
-        for t in ts[1:]:
-            t.text = ''
+    """번호가 여러 조각(run)으로 나뉘어 있어도 잡도록 한 문단의 글자를 이어 붙여 검사하고,
+    바꿀 값은 그 값이 시작된 조각에 넣어 나머지 글자의 서식(굵게·크기 등)은 그대로 둠."""
+    o = [t.text or '' for t in ts]
+    parts = M.parts(''.join(o))
+    if all(len(p) == 1 for p in parts):
+        return
+    owner = [i for i, s in enumerate(o) for _ in s]
+    out, pos = [''] * len(o), 0
+    for p in parts:
+        if len(p) == 1:
+            for k, c in enumerate(p[0]):
+                out[owner[pos + k]] += c
+        else:
+            out[owner[pos]] += p[1]
+        pos += len(p[0])
+    for t, before, after in zip(ts, o, out):
+        if after != before:
+            t.text = after
+            t.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
 
 
 def nearest_p(e):
