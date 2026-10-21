@@ -442,7 +442,7 @@ const RULES=[
   ['이메일',/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g],
   ['사업자번호',/(?<!\d)\d{3}-\d{2}-\d{5}(?!\d)/g],
   ['여권번호',/(?<![A-Za-z0-9])[MSROD]\d{8}(?!\d)/g],
-  ['IP주소',/(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])/g],
+  ['IP주소',/(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?!\d|\.\d)/g],
   ['계좌번호',/(?<!\d)\d{2,6}-\d{2,6}-\d{2,8}(?:-\d{1,4})?(?!\d)/g]
 ];
 /* 토큰 번호는 이 페이지를 열어 둔 동안 텍스트·파일 전체에서 공유 → 어디서든 복원 가능 */
@@ -518,7 +518,7 @@ buildCats('cats-t');buildCats('cats-f');
 const summary=f=>Object.entries(f).map(([k,v])=>k+' '+v+'건').join(', ');
 
 /* ---------- 탭 1: 텍스트 ---------- */
-$('tf').onchange=async e=>{const f=e.target.files[0];if(f)$('src').value=await f.text();};
+$('tf').onchange=async e=>{const f=e.target.files[0];if(f)$('src').value=readText(await f.arrayBuffer()).text;};
 $('go').onclick=()=>{
   const cats=enabledSet('cats-t'),words=$('words').value,m=$('mm');
   m.replaceChildren();m.className='msg';

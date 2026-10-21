@@ -22,7 +22,7 @@ RULES = [
     ('이메일',       re.compile(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+')),
     ('사업자번호',   re.compile(N + r'\d{3}-\d{2}-\d{5}' + X)),
     ('여권번호',     re.compile(r'(?<![A-Za-z0-9])[MSROD]\d{8}(?!\d)')),
-    ('IP주소',       re.compile(r'(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])')),
+    ('IP주소',       re.compile(r'(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?!\d|\.\d)')),  # 문장 끝 마침표는 허용
     ('계좌번호',     re.compile(N + r'\d{2,6}-\d{2,6}-\d{2,8}(?:-\d{1,4})?' + X)),
 ]
 DATE = re.compile(r'(19|20)\d{2}-\d{2}-\d{2}')  # 날짜를 계좌번호로 오인하지 않도록
@@ -55,31 +55,47 @@ class Masker:
         return self.seen[key]
 
 
+W = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+DOCX_PARTS = re.compile(r'/word/(document|header\d*|footer\d*|footnotes|endnotes|comments)\.xml')
+
+
+def mask_group(ts, M):
+    """번호가 여러 조각(run)으로 나뉘어 있어도 잡도록, 한 문단의 글자를 이어 붙여 검사."""
+    o = ''.join(t.text or '' for t in ts)
+    m = M.text(o)
+    if m != o:
+        ts[0].text = m
+        ts[0].set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
+        for t in ts[1:]:
+            t.text = ''
+
+
+def nearest_p(e):
+    e = e.getparent()
+    while e is not None and e.tag != W + 'p':
+        e = e.getparent()
+    return e
+
+
 def do_docx(src, dst, M):
     import docx
+    from lxml import etree
     d = docx.Document(src)
-
-    def para(p):
-        t = p.text
-        m = M.text(t)
-        if m != t and p.runs:          # 번호가 여러 run에 쪼개져 있어도 잡도록 문단 단위로 처리
-            p.runs[0].text = m
-            for r in p.runs[1:]:
-                r.text = ''
-
-    def block(c):
-        for p in c.paragraphs:
-            para(p)
-        for tb in c.tables:
-            for row in tb.rows:
-                for cell in row.cells:
-                    block(cell)
-
-    block(d)
-    for s in d.sections:
-        for part in (s.header, s.footer, s.first_page_header, s.first_page_footer,
-                     s.even_page_header, s.even_page_footer):
-            block(part)
+    for part in d.part.package.iter_parts():
+        if DOCX_PARTS.fullmatch(str(part.partname)):
+            xml = hasattr(part, '_element')
+            root = part._element if xml else etree.fromstring(part.blob)  # 각주 등은 python-docx가 XML로 읽지 않음
+            # 하이퍼링크·텍스트 상자 안의 글자까지 포함 (텍스트 상자 속 문단은 따로 처리)
+            for p in root.iter(W + 'p'):
+                mask_group([t for t in p.iter(W + 't') if nearest_p(t) is p], M)
+            for t in root.iter(W + 'instrText'):   # 필드 코드 (HYPERLINK "mailto:..." 등)
+                if t.text:
+                    t.text = M.text(t.text)
+            if not xml:
+                part._blob = etree.tostring(root, xml_declaration=True, encoding='UTF-8', standalone=True)
+        for rel in part.rels.values():   # 하이퍼링크 주소(mailto: 등)
+            if rel.is_external:
+                rel._target = M.text(rel.target_ref)
     d.save(dst)
 
 
@@ -96,6 +112,13 @@ def do_xlsx(src, dst, M):
                     m = M.text(str(v))   # 숫자로 저장된 주민번호·카드번호 등
                     if m != str(v):
                         c.value = m
+                if c.hyperlink:   # 하이퍼링크 주소(mailto: 등)
+                    h = c.hyperlink
+                    for k in ('target', 'location', 'display', 'tooltip'):
+                        if getattr(h, k):
+                            setattr(h, k, M.text(getattr(h, k)))
+                if c.comment:
+                    c.comment.text = M.text(c.comment.text)
     wb.save(dst)
 
 
@@ -106,11 +129,19 @@ def do_pdf(src, dst, M):
         raise ValueError('텍스트를 읽을 수 없는 PDF입니다(스캔본이면 OCR이 필요합니다).')
     # 줄바꿈으로 끊긴 이메일·번호를 이어 붙여서 놓치지 않게 함
     text = re.sub(r'(?<=[-@])\n(?=[A-Za-z0-9])|(?<=\.)\n(?=[a-z])|(?<=[A-Za-z0-9])\n(?=@)', '', text)
-    open(dst, 'w', encoding='utf-8').write(M.text(text))
+    with open(dst, 'w', encoding='utf-8') as o:
+        o.write(M.text(text))
 
 
 def do_text(src, dst, M):
-    open(dst, 'w', encoding='utf-8').write(M.text(open(src, encoding='utf-8-sig').read()))
+    with open(src, 'rb') as i:
+        raw = i.read()
+    try:
+        text = raw.decode('utf-8-sig')
+    except UnicodeDecodeError:
+        text = raw.decode('cp949')   # 엑셀에서 저장한 CSV 등 EUC-KR(CP949) 파일 → UTF-8로 저장
+    with open(dst, 'w', encoding='utf-8') as o:
+        o.write(M.text(text))
 
 
 def lock(path, pw):
@@ -180,7 +211,8 @@ def main():
         found = ', '.join(f'{k} {v}건' for k, v in M.found.items()) or '찾은 항목 없음'
         print(f'{f} -> {dst}  [{found}]')
         if a.map and M.map:
-            json.dump(M.map, open(base + '_map.json', 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+            with open(base + '_map.json', 'w', encoding='utf-8') as o:
+                json.dump(M.map, o, ensure_ascii=False, indent=1)
         if pw:
             try:
                 print('  원본 잠금 ->', lock(f, pw))
