@@ -130,6 +130,49 @@ class Files(unittest.TestCase):
             self.assertNotIn(s, xml)
         self.assertEqual(g.leftover(self.p('a_masked.docx'), ['홍길동']), {})
 
+    def test_docx_people_part(self):
+        """Word 2013+가 댓글·변경 추적 작성자를 따로 적는 word/people.xml (이름 + 마이크로소프트 365 계정 이메일)."""
+        import docx
+        from docx.opc.packuri import PackURI
+        from docx.opc.part import Part
+        d = docx.Document()
+        d.add_paragraph('본문')
+        people = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                  '<w15:people xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml">'
+                  '<w15:person w15:author="홍길동"><w15:presenceInfo w15:providerId="AD" '
+                  'w15:userId="S::gildong.hong@example.com::1234abcd"/></w15:person></w15:people>').encode()
+        part = Part(PackURI('/word/people.xml'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.people+xml',
+                    people, d.part.package)
+        d.part.relate_to(part, 'http://schemas.microsoft.com/office/2011/relationships/people')
+        d.save(self.p('a.docx'))
+        g.do_docx(self.p('a.docx'), self.p('a_masked.docx'), g.Masker(['홍길동']))
+
+        with zipfile.ZipFile(self.p('a_masked.docx')) as z:
+            xml = z.read('word/people.xml').decode()
+        self.assertNotIn('홍길동', xml)
+        self.assertNotIn('gildong.hong@example.com', xml)
+        self.assertEqual(g.leftover(self.p('a_masked.docx'), ['홍길동']), {})
+
+    def test_pdf_restricted_opens_but_password_pdf_is_refused(self):
+        from pypdf import PdfWriter
+        from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+        for name, user_pw in (('restricted.pdf', ''), ('locked.pdf', 'open-me')):
+            w = PdfWriter()
+            page = w.add_blank_page(300, 200)
+            font = DictionaryObject({NameObject('/Type'): NameObject('/Font'), NameObject('/Subtype'): NameObject('/Type1'),
+                                     NameObject('/BaseFont'): NameObject('/Helvetica')})
+            page[NameObject('/Resources')] = DictionaryObject({NameObject('/Font'): DictionaryObject({NameObject('/F1'): w._add_object(font)})})
+            body = DecodedStreamObject()
+            body.set_data(b'BT /F1 12 Tf 10 100 Td (Phone 010-1234-5678) Tj ET')
+            page[NameObject('/Contents')] = w._add_object(body)
+            w.encrypt(user_password=user_pw, owner_password='owner-secret', permissions_flag=0)   # 복사·인쇄 금지
+            with open(self.p(name), 'wb') as f:
+                w.write(f)
+        g.do_pdf(self.p('restricted.pdf'), self.p('out.txt'), g.Masker())   # 열기 비밀번호 없음 → 처리됨
+        self.assertIn('[휴대전화_1]', Path(self.p('out.txt')).read_text(encoding='utf-8'))
+        with self.assertRaisesRegex(ValueError, '비밀번호'):
+            g.do_pdf(self.p('locked.pdf'), self.p('out2.txt'), g.Masker())
+
     def test_broken_files_give_korean_messages(self):
         open(self.p('empty.docx'), 'wb').close()
         with open(self.p('old.xlsx'), 'wb') as f:   # 암호화된 Office 파일·옛 형식과 같은 시작 바이트
@@ -145,12 +188,14 @@ class Files(unittest.TestCase):
         ws['A1'] = 1012345678                      # 서식으로 010-1234-5678처럼 보이는 셀
         ws['A1'].number_format = '000-0000-0000'
         ws['B1'] = 501014123456                    # 0501014123456 (앞자리 0이 지워진 주민번호)
+        ws['C1'] = 250000000                       # 금액 2억 5천만 원: 0을 붙이면 02-5000-0000 모양이지만 그대로 둬야 함
+        ws['D1'] = 3112345678                      # 금액: 0을 붙이면 031-1234-5678 모양
         ws.title = '010-1234-5678'                 # 시트 이름은 가리지 않음 → 재검사가 알려야 함
         wb.save(self.p('a.xlsx'))
         g.do_xlsx(self.p('a.xlsx'), self.p('a_masked.xlsx'), g.Masker())
 
         ws = openpyxl.load_workbook(self.p('a_masked.xlsx')).active
-        self.assertEqual((ws['A1'].value, ws['B1'].value), ('[휴대전화_1]', '[주민등록번호_1]'))
+        self.assertEqual([c.value for c in ws[1]], ['[휴대전화_1]', '[주민등록번호_1]', 250000000, 3112345678])
         self.assertEqual(g.leftover(self.p('a_masked.xlsx'), []), {'휴대전화': 1})
 
     def test_text_encodings(self):

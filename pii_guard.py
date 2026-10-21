@@ -41,6 +41,9 @@ RULES = [   # index.html의 RULES와 정규식이 같아야 함 (tests/test_pii_
                        r'?|,?\s*[0-9A-Za-z-]+호|,?\s*\d{1,4}-\d{1,4}(?![\d-])))')),
 ]
 DATE = C(r'(19|20)\d{2}-\d{2}-\d{2}')  # 날짜를 계좌번호로 오인하지 않도록
+# 숫자 셀 앞에 0을 붙여 볼 때는 이 둘만 (250000000원 같은 금액이 02-5000-0000 전화번호로 가려지지 않게).
+# shortcut: 10억대 금액 중 10·11·16~19로 시작하는 값은 여전히 휴대전화로 보임, 셀 표시 형식까지 볼 필요가 생기면 그때 바꿈
+ZERO = [rx for label, rx in RULES if label in ('휴대전화', '주민등록번호')]
 FW = str.maketrans('０１２３４５６７８９', '0123456789')   # 전각 숫자 → 일반 숫자 (글자 수가 같아 위치가 그대로)
 PH_OPEN, PH_CLOSE = chr(0xE000), chr(0xE001)   # 찾은 값을 잠시 바꿔 두는 보호 문자 (사용자 영역 문자)
 PH = re.compile(PH_OPEN + '([' + chr(0xE010) + '-' + chr(0xE019) + ']+)' + PH_CLOSE)
@@ -135,7 +138,8 @@ class Masker:
 
 
 W = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
-DOCX_PARTS = re.compile(r'/word/(document|header\d*|footer\d*|footnotes|endnotes|comments)\.xml')
+DOCX_PARTS = re.compile(r'/word/(document|header\d*|footer\d*|footnotes|endnotes|comments|people)\.xml')   # people: 댓글·변경 추적 작성자 목록
+ATTRS = ('instr', 'author', 'userId')   # 속성 속 글자: 필드 코드, 작성자 이름, 작성자 계정(S::이메일::…)
 
 
 def mask_group(ts, M):
@@ -191,10 +195,10 @@ def do_docx(src, dst, M):
             for p in root.iter(W + 'p'):
                 for tag in ('t', 'delText', 'instrText'):
                     mask_group([t for t in p.iter(W + tag) if nearest_p(t) is p], M)
-            for e in root.iter():   # 속성 속 글자: 필드 코드(fldSimple의 instr), 변경 추적·댓글 작성자 이름(author)
-                for k in (W + 'instr', W + 'author'):
-                    if e.get(k):
-                        e.set(k, M.text(e.get(k)))
+            for e in root.iter():   # w:author, w15:author처럼 네임스페이스가 달라도 이름으로 찾음
+                for k, v in e.attrib.items():
+                    if k.rsplit('}', 1)[-1] in ATTRS:
+                        e.set(k, M.text(v))
             if not xml:
                 part._blob = etree.tostring(root, xml_declaration=True, encoding='UTF-8', standalone=True)
         for rel in part.rels.values():   # 하이퍼링크 주소(mailto: 등)
@@ -213,13 +217,12 @@ def do_xlsx(src, dst, M):
                 v = c.value
                 if isinstance(v, str) and not v.startswith('='):
                     c.value = M.text(v)
-                elif isinstance(v, int) and not isinstance(v, bool):
-                    # 숫자로 저장된 주민번호·카드번호 등. 엑셀이 앞자리 0을 지운 번호(010…, 2000년대생 주민번호)도 확인
-                    for s in (str(v), '0' + str(v)):
-                        m = M.text(s)
-                        if m != s:
-                            c.value = m
-                            break
+                elif isinstance(v, int) and not isinstance(v, bool):   # 숫자로 저장된 주민번호·카드번호 등
+                    s, z = str(v), '0' + str(v)
+                    if M.text(s) != s:
+                        c.value = M.text(s)
+                    elif any(rx.fullmatch(z) for rx in ZERO):   # 엑셀이 앞자리 0을 지운 휴대전화·주민번호
+                        c.value = M.text(z)
                 if c.hyperlink:   # 하이퍼링크 주소(mailto: 등)
                     h = c.hyperlink
                     for k in ('target', 'location', 'display', 'tooltip'):
@@ -234,7 +237,7 @@ def do_pdf(src, dst, M):
     from pypdf import PdfReader
     try:
         r = PdfReader(src)
-        locked = r.is_encrypted
+        locked = r.is_encrypted and not r.decrypt('')   # 복사·인쇄 제한만 걸린 PDF는 빈 비밀번호로 열림
     except Exception:
         raise ValueError('PDF 파일을 열 수 없어요. 파일이 손상됐을 수 있어요.')
     if locked:
@@ -276,7 +279,7 @@ def leftover(dst, words):
                 x = z.read(n).decode('utf-8', 'replace')
                 parts.append(re.sub(r'<[^>]+>', ' ', x))
                 parts += [unquote(v) for v in re.findall(r'Target="([^"]*)"', x)]
-                parts += re.findall(r'[\s:](?:name|descr|title|alias|tag|tooltip|display|instr|author)="([^"]*)"', x)
+                parts += re.findall(r'[\s:](?:name|descr|title|alias|tag|tooltip|display|instr|author|userId)="([^"]*)"', x)
         text = html.unescape('\n'.join(parts))
     else:
         with open(dst, encoding='utf-8-sig') as i:

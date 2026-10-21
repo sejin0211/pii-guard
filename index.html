@@ -451,6 +451,8 @@ const RULES=[   /* pii_guard.py의 RULES와 정규식이 같아야 함 (tests/te
 const SES={seen:{},cnt:{},map:{}};
 const CATS=RULES.map(r=>r[0]);
 const isDate=(label,m)=>label==='계좌번호'&&/^(19|20)\d{2}-\d{2}-\d{2}$/.test(m);
+/* 숫자 셀 앞에 0을 붙여 볼 때는 휴대전화·주민번호만 (250000000원 같은 금액이 전화번호로 가려지지 않게) */
+const ZERO=RULES.filter(([l])=>l==='휴대전화'||l==='주민등록번호').map(([,re])=>new RegExp('^(?:'+re.source+')$'));
 /* 전각 숫자 → 일반 숫자 (글자 수가 같아 위치가 그대로). 검사만 바꾼 글로 하고 결과에는 원래 글자를 씀 */
 const norm=s=>s.replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0));
 function wordsRule(raw){
@@ -619,7 +621,7 @@ async function zipText(blob){
     t+='\n'+x.replace(/<[^>]+>/g,' ');
     for(const m of x.matchAll(/Target="([^"]*)"/g)){try{t+='\n'+decodeURIComponent(m[1]);}catch{t+='\n'+m[1];}}
     /* 시트 이름, 그림 대체 텍스트, 링크 설명 등 속성 값에 숨은 정보 */
-    for(const m of x.matchAll(/[\s:](?:name|descr|title|alias|tag|tooltip|display|instr|author)="([^"]*)"/g))t+='\n'+m[1];
+    for(const m of x.matchAll(/[\s:](?:name|descr|title|alias|tag|tooltip|display|instr|author|userId)="([^"]*)"/g))t+='\n'+m[1];
   }
   return t.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;|&#39;/g,"'").replace(/&amp;/g,'&');
 }
@@ -635,12 +637,12 @@ async function maskDocx(buf,M,meta){
   const zip=await openZip(buf);
   const nearestP=t=>{let e=t.parentNode;while(e&&!(e.localName==='p'&&e.namespaceURI===W))e=e.parentNode;return e;};
   for(const n of Object.keys(zip.files)){
-    if(!/^word\/(document|header\d*|footer\d*|footnotes|endnotes|comments)\.xml$/.test(n))continue;
+    if(!/^word\/(document|header\d*|footer\d*|footnotes|endnotes|comments|people)\.xml$/.test(n))continue;   /* people: 댓글·변경 추적 작성자 목록 */
     /* delText: 변경 내용 추적으로 지운 글자, instrText: 필드 코드(HYPERLINK "mailto:..." 등, 여러 조각으로 나뉘기도 함) */
-    /* 속성 속 글자: 필드 코드(fldSimple의 instr), 변경 추적·댓글 작성자 이름(author) */
+    /* 속성 속 글자: 필드 코드(instr), 작성자 이름(author), 작성자 계정(userId, S::이메일::…). w15:author처럼 네임스페이스가 달라도 이름으로 찾음 */
     await editXml(zip,n,d=>{
       els(d,W,'p').forEach(p=>['t','delText','instrText'].forEach(k=>maskGroup(els(p,W,k).filter(t=>nearestP(t)===p),M)));
-      for(const e of d.getElementsByTagName('*'))for(const k of ['instr','author']){const s=e.getAttributeNS(W,k);if(s){const x=M.fn(s);if(x!==s)e.setAttributeNS(W,'w:'+k,x);}}
+      for(const e of d.getElementsByTagName('*'))for(const a of e.attributes)if(['instr','author','userId'].includes(a.localName)){const x=M.fn(a.value);if(x!==a.value)a.value=x;}
     });
   }
   await maskRels(zip,M);
@@ -660,7 +662,7 @@ async function maskXlsx(buf,M,meta){
       else if((!t||t==='n')&&!els(c,S,'f').length){          /* 숫자로 저장된 주민번호·카드번호 등 */
         const v=els(c,S,'v')[0];if(!v)return;
         const s=v.textContent;let m=M.fn(s);
-        if(m===s&&/^\d+$/.test(s)){const z='0'+s,y=M.fn(z);if(y!==z)m=y;}   /* 엑셀이 앞자리 0을 지운 번호(010…, 2000년대생 주민번호) */
+        if(m===s&&ZERO.some(r=>r.test('0'+s)))m=M.fn('0'+s);   /* 엑셀이 앞자리 0을 지운 휴대전화·주민번호(010…, 2000년대생) */
         if(m!==s){
           c.setAttribute('t','inlineStr');c.removeChild(v);
           const is=d.createElementNS(S,'is'),tt=d.createElementNS(S,'t');
