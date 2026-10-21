@@ -11,14 +11,16 @@
   --lock-only  마스킹은 하지 않고 비밀번호만 설정
 결과: 원본은 건드리지 않고 '이름_masked.확장자' 로 저장합니다. PDF는 '이름_pdf_masked.txt'(텍스트만 추출).
 """
-import argparse, getpass, json, os, re, time
+import argparse, getpass, html, json, os, re, zipfile
+from urllib.parse import unquote
 
 N, X = r'(?<!\d)', r'(?!\d)'
-RULES = [
+RULES = [   # index.html의 RULES와 정규식이 같아야 함 (tests/test_pii_guard.py가 확인)
     ('주민등록번호', re.compile(N + r'\d{6}[- ]?[1-8]\d{6}' + X)),  # 5~8: 외국인등록번호
     ('카드번호',     re.compile(N + r'\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}' + X)),
-    ('휴대전화',     re.compile(N + r'01[016789][-. ]?\d{3,4}[-. ]?\d{4}' + X)),
-    ('전화번호',     re.compile(N + r'0(?:2|[3-6]\d)[-. ]?\d{3,4}[-. ]?\d{4}' + X)),
+    ('휴대전화',     re.compile(N + r'\(?01[016789]\)?[-. ]?\d{3,4}[-. ]?\d{4}' + X)),
+    # (02)123-4567, 070·080, +82 2-123-4567 / +82 10-1234-5678 형식 포함
+    ('전화번호',     re.compile(r'(?:\+82[-. ]?|(?<!\d)\(?0)(?:2|[3-6]\d|70|80|1[016789])\)?[-. ]?\d{3,4}[-. ]?\d{4}' + X)),
     ('이메일',       re.compile(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+')),
     ('사업자번호',   re.compile(N + r'\d{3}-\d{2}-\d{5}' + X)),
     ('여권번호',     re.compile(r'(?<![A-Za-z0-9])[MSROD]\d{8}(?!\d)')),
@@ -176,8 +178,32 @@ def do_text(src, dst, M):
             text = raw.decode('utf-8-sig')
         except UnicodeDecodeError:
             text = raw.decode('cp949')   # 엑셀에서 저장한 CSV 등 EUC-KR(CP949) 파일 → UTF-8로 저장
-    with open(dst, 'w', encoding='utf-8', newline='') as o:   # 원본 줄바꿈(\r\n 등) 그대로 유지
+    # CSV는 BOM을 붙여야 한국어 Windows의 엑셀에서 한글이 깨지지 않음. 원본 줄바꿈(\r\n 등)은 그대로 유지
+    enc = 'utf-8-sig' if dst.lower().endswith('.csv') else 'utf-8'
+    with open(dst, 'w', encoding=enc, newline='') as o:
         o.write(M.text(text))
+
+
+def leftover(dst, words):
+    """결과 파일 전체를 같은 규칙으로 다시 검사해 남은 항목 수를 돌려줌 (웹 도구의 재검사와 같은 범위).
+    Word·Excel은 모든 XML 글자, 링크 주소, 시트 이름·그림 대체 텍스트 등 속성 값까지 확인."""
+    if dst.endswith(('.docx', '.xlsx')):
+        parts = []
+        with zipfile.ZipFile(dst) as z:
+            for n in z.namelist():
+                if not n.endswith(('.xml', '.rels')):
+                    continue
+                x = z.read(n).decode('utf-8', 'replace')
+                parts.append(re.sub(r'<[^>]+>', ' ', x))
+                parts += [unquote(v) for v in re.findall(r'Target="([^"]*)"', x)]
+                parts += re.findall(r'[\s:](?:name|descr|title|alias|tag|tooltip|display)="([^"]*)"', x)
+        text = html.unescape('\n'.join(parts))
+    else:
+        with open(dst, encoding='utf-8-sig') as i:
+            text = i.read()
+    R = Masker(words)
+    R.text(text)
+    return R.found
 
 
 def lock(path, pw):
@@ -246,6 +272,12 @@ def main():
             print(f'실패: {f} - {e}'); continue
         found = ', '.join(f'{k} {v}건' for k, v in M.found.items()) or '찾은 항목 없음'
         print(f'{f} -> {dst}  [{found}]')
+        left = leftover(dst, a.words.split(','))
+        if left:
+            print('  ⚠️ 재검사: 아직 남은 항목이 있어요 —', ', '.join(f'{k} {v}건' for k, v in left.items()),
+                  '(시트 이름·수식 등). 결과 파일을 열어 직접 확인하세요.')
+        else:
+            print('  ✅ 재검사: 남은 개인정보가 없습니다.')
         if a.map and M.map:
             with open(base + '_map.json', 'w', encoding='utf-8') as o:
                 json.dump(M.map, o, ensure_ascii=False, indent=1)

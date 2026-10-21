@@ -434,11 +434,11 @@ document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
 });
 
 /* ---------- 마스킹 엔진 (텍스트·파일 공용) ---------- */
-const RULES=[
+const RULES=[   /* pii_guard.py의 RULES와 정규식이 같아야 함 (tests/test_pii_guard.py가 확인) */
   ['주민등록번호',/(?<!\d)\d{6}[- ]?[1-8]\d{6}(?!\d)/g],  /* 5~8: 외국인등록번호 */
   ['카드번호',/(?<!\d)\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}(?!\d)/g],
-  ['휴대전화',/(?<!\d)01[016789][-. ]?\d{3,4}[-. ]?\d{4}(?!\d)/g],
-  ['전화번호',/(?<!\d)0(?:2|[3-6]\d)[-. ]?\d{3,4}[-. ]?\d{4}(?!\d)/g],
+  ['휴대전화',/(?<!\d)\(?01[016789]\)?[-. ]?\d{3,4}[-. ]?\d{4}(?!\d)/g],
+  ['전화번호',/(?:\+82[-. ]?|(?<!\d)\(?0)(?:2|[3-6]\d|70|80|1[016789])\)?[-. ]?\d{3,4}[-. ]?\d{4}(?!\d)/g],  /* (02)123-4567, 070·080, +82 포함 */
   ['이메일',/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g],
   ['사업자번호',/(?<!\d)\d{3}-\d{2}-\d{5}(?!\d)/g],
   ['여권번호',/(?<![A-Za-z0-9])[MSROD]\d{8}(?!\d)/g],
@@ -717,7 +717,7 @@ $('fgo').onclick=async()=>{
       if(ext==='docx'){blob=await maskDocx(buf,M,meta);name=base+'_masked.docx';}
       else if(ext==='xlsx'){blob=await maskXlsx(buf,M,meta);name=base+'_masked.xlsx';}
       else if(ext==='pdf'){blob=await maskPdf(buf,M);text=await blob.text();name=base+'_pdf_masked.txt';note=' · 글자만 추출해 .txt로 저장';}
-      else if(/^(txt|csv|md|json|log|tsv)$/.test(ext)){const r=readText(buf);text=M.fn(r.text);blob=new Blob([text],{type:'text/plain'});name=base+'_masked.'+ext;note=r.note?' · '+r.note:'';}
+      else if(/^(txt|csv|md|json|log|tsv)$/.test(ext)){const r=readText(buf);text=M.fn(r.text);blob=new Blob([(ext==='csv'?String.fromCharCode(0xFEFF):'')+text],{type:'text/plain'});  /* CSV는 BOM을 붙여야 엑셀에서 한글이 안 깨짐 */name=base+'_masked.'+ext;note=r.note?' · '+r.note:'';}
       else throw new Error('지원하지 않는 형식입니다. (.doc, .xls는 .docx, .xlsx로 저장한 뒤 사용하세요)');
       const d={};for(const k in M.found){const n=M.found[k]-(before[k]||0);if(n)d[k]=n;}
       const rc=recheck(text!==null?text:await zipText(blob),cats,words);
