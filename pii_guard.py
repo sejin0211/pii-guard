@@ -22,15 +22,16 @@ RULES = [   # index.html의 RULES와 정규식이 같아야 함 (tests/test_pii_
     # 앞 6자리는 실제 날짜(월 01~12, 일 01~31)일 때만, 뒷자리 5~8은 외국인등록번호
     ('주민등록번호', C(N + r'\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])[- ]?[1-8]\d{6}' + X)),
     ('카드번호',     C(N + r'\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}' + X)),
-    ('휴대전화',     C(N + r'(?:\(01[016789]\)|01[016789])[-. ]?\d{3,4}[-. ]?\d{4}' + X)),
+    ('휴대전화',     C(N + r'(?<!\d-)(?:\(01[016789]\)|01[016789])[-. ]?\d{3,4}[-. ]?\d{4}' + X)),
     # (02)123-4567, 070·080, +82 2-123-4567 / +82 (0)2-123-4567 / +82 10-1234-5678 형식 포함
-    ('전화번호',     C(r'(?:(?<!\d)(?:\(0(?:2|[3-6]\d|70|80)\)|0(?:2|[3-6]\d|70|80))|\+82[-. ]?(?:\(0\)[-. ]?)?(?:2|[3-6]\d|70|80|1[016789]))'
+    ('전화번호',     C(r'(?<!\d-)(?:(?<!\d)(?:\(0(?:2|[3-6]\d|70|80)\)|0(?:2|[3-6]\d|70|80))|\+82[-. ]?(?:\(0\)[-. ]?)?(?:2|[3-6]\d|70|80|1[016789]))'
                        r'[-. ]?\d{3,4}[-. ]?\d{4}' + X)),
     ('이메일',       C(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+')),
     ('사업자번호',   C(N + r'\d{3}-\d{2}-\d{5}' + X)),
     ('여권번호',     C(r'(?<![A-Za-z0-9])[MSROD](?:\d{8}|\d{3}[A-Z]\d{4})(?![A-Za-z0-9])')),  # 신형(2021~): M123A4567
     ('IP주소',       C(r'(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?!\d|\.\d)')),  # 문장 끝 마침표는 허용
-    ('계좌번호',     C(N + r'\d{2,6}-\d{2,6}-\d{2,8}(?:-\d{1,4})?' + X)),
+    # 하이픈 없는 10~16자리는 앞 20자 안에 계좌 관련 말이 있을 때만 (Masker.parts에서 확인)
+    ('계좌번호',     C(N + r'(?:\d{2,6}-\d{2,6}-\d{2,8}(?:-\d{1,4})?|\d{10,16})' + X)),
     # 도로명·지번 주소. 시·도와 시·군·구가 둘 다 있으면 그대로, 하나만 있으면 동·층·호(709-702 포함)까지 있어야 함 ("경기 결과로 3배" 같은 오탐 방지)
     ('주소',         C(r'(?<![가-힣])(?:(?:서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충청북|충청남|충북|충남|전라북|전라남|전북|전남|경상북|경상남|경북|경남|제주)'
                        r'(?:특별시|광역시|특별자치시|특별자치도|도|시)?\s+(?:[가-힣]+(?:시|군|구)\s+){1,2}(?:[가-힣]+(?:읍|면)\s+)?[가-힣0-9]+(?:로|'
@@ -42,6 +43,8 @@ RULES = [   # index.html의 RULES와 정규식이 같아야 함 (tests/test_pii_
                        r'?|,?\s*[0-9A-Za-z-]+호|,?\s*\d{1,4}-\d{1,4}(?![\d-])))')),
 ]
 DATE = C(r'(19|20)\d{2}-\d{2}-\d{2}')  # 날짜를 계좌번호로 오인하지 않도록
+ACCT_CTX = re.compile(r'(?<!\[)(?:계좌|통장|입금|은행|환불|account)', re.I)   # 하이픈 없는 계좌번호 앞에 있어야 할 말 (웹과 같음)
+ACCT = dict(RULES)['계좌번호']   # 맥락 확인은 이 규칙에만 (표 머리글로 찾은 계좌번호는 그대로 가림)
 # 숫자 셀 앞에 0을 붙여 볼 때는 이 둘만 (250000000원 같은 금액이 02-5000-0000 전화번호로 가려지지 않게).
 # shortcut: 10억대 금액 중 10·11·16~19로 시작하는 값은 여전히 휴대전화로 보임, 셀 표시 형식까지 볼 필요가 생기면 그때 바꿈
 ZERO = [rx for label, rx in RULES if label in ('휴대전화', '주민등록번호')]
@@ -53,7 +56,7 @@ PH = re.compile(PH_OPEN + '([' + chr(0xE010) + '-' + chr(0xE019) + ']+)' + PH_CL
 def partial(label, m):
     """일부만 가리기. 웹(index.html)의 partial()과 같은 결과 (예: 010-****-5678, 901023-1******)."""
     m = m.translate(FW)
-    if label == '지정어':
+    if label in ('지정어', '이름'):
         return m[0] + '*' * (len(m) - 1) if len(m) <= 2 else m[0] + '*' * (len(m) - 2) + m[-1]
     if label == '이메일':
         i = m.index('@')
@@ -90,10 +93,16 @@ def partial(label, m):
 class Masker:
     def __init__(self, words=(), star=False, part=False):
         self.star, self.part, self.map, self.seen, self.cnt, self.found = star, part, {}, {}, {}, {}
+        self.vals, self.extra = {}, {}   # 엑셀 표 머리글로 찾은 이름·계좌번호 (add_values)
         self.rules = list(RULES)
         ws = sorted({w.strip().translate(FW) for w in words if w.strip()}, key=len, reverse=True)
         if ws:
             self.rules.insert(0, ('지정어', re.compile('|'.join(map(re.escape, ws)))))
+
+    def add_values(self, label, vals):
+        """표 머리글로 찾은 값(이름·계좌번호)을 파일 전체에서 가리도록 규칙 앞에 넣음."""
+        self.vals.setdefault(label, set()).update(v.translate(FW) for v in vals)
+        self.extra[label] = re.compile('|'.join(map(re.escape, sorted(self.vals[label], key=len, reverse=True))))
 
     def text(self, s):
         return ''.join(p[-1] for p in self.parts(s))
@@ -104,10 +113,11 @@ class Masker:
         검사는 전각 숫자를 일반 숫자로 바꾼 글(s)에서 하고, 결과에는 원래 글자(o)를 씀."""
         keep = []
         o, s = s, s.translate(FW)
-        for label, rx in self.rules:
+        for label, rx in [*self.extra.items(), *self.rules]:
             ns, no, last = [], [], 0
             for m in rx.finditer(s):
-                if label == '계좌번호' and DATE.fullmatch(m.group(0)):   # 날짜는 그대로
+                g = m.group(0)   # 계좌번호: 날짜는 그대로, 하이픈 없는 긴 숫자는 앞 20자 안에 계좌 관련 말이 있을 때만
+                if rx is ACCT and (DATE.fullmatch(g) or '-' not in g and not ACCT_CTX.search(s[max(0, m.start() - 20):m.start()])):
                     continue
                 v = o[m.start():m.end()]
                 keep.append([v, self._sub(label, v)])
@@ -211,10 +221,50 @@ def do_docx(src, dst, M):
     d.save(dst)
 
 
+# 엑셀 표: 같은 열 위쪽 제목 칸이나 바로 왼쪽 칸이 '계좌…'·'성명…'이면 그 칸의 값을 계좌번호·이름으로 봄 (웹과 같음)
+ACCT_H = re.compile(r'계좌|통장|입금|환불|account', re.I)
+NAME_H = re.compile(r'성명|이름|예금주|대표자|담당자|신청자|보호자|학생명|고객명|name', re.I)
+NOT_NAME = re.compile(r'번호|연락처|전화|주소|메일|생년|일자|날짜|코드')
+NOT_VAL = re.compile(r'(합계|소계|총계|계|비고|없음|해당\s*없음|예|아니오|남|여)')
+
+
+def head_kind(t):
+    t = (t or '').strip()
+    if not t or len(t) > 12:
+        return ''
+    if ACCT_H.search(t):
+        return '계좌번호'
+    return '이름' if NAME_H.search(t) and not NOT_NAME.search(t) else ''
+
+
+def table_values(cells):
+    """cells: {(열, 행): 글자} (시트 하나). 돌려주는 값: {'계좌번호': [...], '이름': [...]}"""
+    head, out = {}, {'계좌번호': [], '이름': []}
+    for (c, r), t in cells.items():   # 열마다 맨 위 제목 칸
+        k = head_kind(t)
+        if k and r <= 20 and not (c in head and head[c][1] < r):
+            head[c] = (k, r)
+    for (c, r), t in cells.items():
+        t = t.strip()
+        for k in (head[c][0] if c in head and r > head[c][1] else '', head_kind(cells.get((c - 1, r)))):
+            if k == '계좌번호' and re.fullmatch(r'[\d\s-]+', t) and re.fullmatch(r'\d{10,16}', re.sub(r'[\s-]', '', t)):
+                out[k].append(t)
+            if (k == '이름' and not NOT_VAL.fullmatch(t) and not head_kind(t)
+                    and re.fullmatch(r'[가-힣A-Za-z][가-힣A-Za-z .·]{1,19}', t) and len(t.split()) <= 4):
+                out[k].append(t)
+    return out
+
+
 def do_xlsx(src, dst, M):
     import openpyxl
     check_office(src)
     wb = openpyxl.load_workbook(src)
+    for ws in wb.worksheets:
+        cells = {(c.column, c.row): str(c.value) for row in ws.iter_rows() for c in row
+                 if isinstance(c.value, (str, int)) and not isinstance(c.value, bool)}
+        for k, vs in table_values(cells).items():
+            if vs:
+                M.add_values(k, vs)
     for ws in wb.worksheets:
         for row in ws.iter_rows():
             for c in row:

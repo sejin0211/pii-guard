@@ -186,7 +186,7 @@ h2 .mini{margin-left:auto;padding:5px 12px;font-size:13px;font-weight:600;border
       <h2><i>2</i>가릴 항목 설정</h2>
       <label for="words">추가로 가릴 단어 (이름·회사명 등, 쉼표로 구분)</label>
       <input type="text" id="words" placeholder="홍길동, 김영희, ㈜예시컴퍼니">
-      <p class="note">이름은 자동으로 찾을 수 없어서 직접 입력해야 가려집니다.</p>
+      <p class="note">이름은 자동으로 찾을 수 없어서 직접 입력해야 가려집니다. (파일 탭의 엑셀 표에서는 성명·이름 열을 자동으로 찾아요)</p>
       <label for="mode">가리는 방식</label>
       <select id="mode">
         <option value="token">토큰으로 치환 (예: [휴대전화_1]) — 나중에 복원 가능</option>
@@ -285,7 +285,7 @@ h2 .mini{margin-left:auto;padding:5px 12px;font-size:13px;font-weight:600;border
         <li>한글(.hwp)은 글자만 추출해 텍스트(.txt)로 저장합니다.</li>
         <li>스캔본 PDF는 OCR로 글자를 읽습니다. 처음 한 번 OCR 엔진(약 9MB)을 받느라 시간이 걸리고, <b>잘못 읽은 글자가 있으면 그 부분은 가려지지 않을 수 있으니</b> 결과를 꼭 확인하세요.</li>
         <li>이미지 속 글자, Excel의 차트·도형 글자, 시트 이름, 수식은 가리지 않습니다. 대신 마스킹이 끝나면 파일 전체를 다시 검사해서 남은 항목을 알려 드려요.</li>
-        <li>이름은 자동으로 찾을 수 없으니 “추가로 가릴 단어”에 꼭 입력하세요.</li>
+        <li>엑셀 표는 같은 열 제목이나 왼쪽 칸이 “성명·이름·예금주”면 이름을, “계좌·통장·입금”이면 계좌번호를 자동으로 가립니다. 그 밖의 이름은 “추가로 가릴 단어”에 꼭 입력하세요.</li>
         <li>정규식 기반이라 놓치는 정보가 있을 수 있습니다. 다운로드한 파일을 열어 눈으로 확인한 뒤 AI에 보내세요.</li>
       </ul>
     </section>
@@ -445,40 +445,42 @@ document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
 const RULES=[   /* pii_guard.py의 RULES와 정규식이 같아야 함 (tests/test_pii_guard.py가 확인) */
   ['주민등록번호',/(?<!\d)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])[- ]?[1-8]\d{6}(?!\d)/g],  /* 앞 6자리는 실제 날짜일 때만, 뒷자리 5~8은 외국인등록번호 */
   ['카드번호',/(?<!\d)\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}(?!\d)/g],
-  ['휴대전화',/(?<!\d)(?:\(01[016789]\)|01[016789])[-. ]?\d{3,4}[-. ]?\d{4}(?!\d)/g],
-  ['전화번호',/(?:(?<!\d)(?:\(0(?:2|[3-6]\d|70|80)\)|0(?:2|[3-6]\d|70|80))|\+82[-. ]?(?:\(0\)[-. ]?)?(?:2|[3-6]\d|70|80|1[016789]))[-. ]?\d{3,4}[-. ]?\d{4}(?!\d)/g],  /* (02)123-4567, 070·080, +82 포함 */
+  ['휴대전화',/(?<!\d)(?<!\d-)(?:\(01[016789]\)|01[016789])[-. ]?\d{3,4}[-. ]?\d{4}(?!\d)/g],
+  ['전화번호',/(?<!\d-)(?:(?<!\d)(?:\(0(?:2|[3-6]\d|70|80)\)|0(?:2|[3-6]\d|70|80))|\+82[-. ]?(?:\(0\)[-. ]?)?(?:2|[3-6]\d|70|80|1[016789]))[-. ]?\d{3,4}[-. ]?\d{4}(?!\d)/g],  /* (02)123-4567, 070·080, +82 포함 */
   ['이메일',/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g],
   ['사업자번호',/(?<!\d)\d{3}-\d{2}-\d{5}(?!\d)/g],
   ['여권번호',/(?<![A-Za-z0-9])[MSROD](?:\d{8}|\d{3}[A-Z]\d{4})(?![A-Za-z0-9])/g],  /* 신형(2021~): M123A4567 */
   ['IP주소',/(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?!\d|\.\d)/g],
-  ['계좌번호',/(?<!\d)\d{2,6}-\d{2,6}-\d{2,8}(?:-\d{1,4})?(?!\d)/g],
+  ['계좌번호',/(?<!\d)(?:\d{2,6}-\d{2,6}-\d{2,8}(?:-\d{1,4})?|\d{10,16})(?!\d)/g],  /* 하이픈 없는 10~16자리는 앞에 계좌 관련 말이 있을 때만 (skipHit) */
   /* 도로명·지번 주소. 시·도와 시·군·구가 둘 다 있으면 그대로, 하나만 있으면 동·층·호(709-702 포함)까지 있어야 함 ("경기 결과로 3배" 같은 오탐 방지) */
   ['주소',/(?<![가-힣])(?:(?:서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충청북|충청남|충북|충남|전라북|전라남|전북|전남|경상북|경상남|경북|경남|제주)(?:특별시|광역시|특별자치시|특별자치도|도|시)?\s+(?:[가-힣]+(?:시|군|구)\s+){1,2}(?:[가-힣]+(?:읍|면)\s+)?[가-힣0-9]+(?:로|길|동|리|가)(?:\s*\d+번?길)?\s*\d+(?:-\d+)?(?:번지)?(?!\d)(?:,?\s*[0-9A-Za-z]+동(?:\s*\d+층)?(?:\s*[0-9A-Za-z-]+호)?|,?\s*\d+층(?:\s*[0-9A-Za-z-]+호)?|,?\s*[0-9A-Za-z-]+호|,?\s*\d{1,4}-\d{1,4}(?![\d-]))?|(?:(?:서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충청북|충청남|충북|충남|전라북|전라남|전북|전남|경상북|경상남|경북|경남|제주)(?:특별시|광역시|특별자치시|특별자치도|도|시)?\s+|(?:[가-힣]+(?:시|군|구)\s+){1,2})(?:[가-힣]+(?:읍|면)\s+)?[가-힣0-9]+(?:로|길|동|리|가)(?:\s*\d+번?길)?\s*\d+(?:-\d+)?(?:번지)?(?!\d)(?:,?\s*[0-9A-Za-z]+동(?:\s*\d+층)?(?:\s*[0-9A-Za-z-]+호)?|,?\s*\d+층(?:\s*[0-9A-Za-z-]+호)?|,?\s*[0-9A-Za-z-]+호|,?\s*\d{1,4}-\d{1,4}(?![\d-])))/g]
 ];
 /* 토큰 번호는 이 페이지를 열어 둔 동안 텍스트·파일 전체에서 공유 → 어디서든 복원 가능 */
 const SES={seen:{},cnt:{},map:{}};
 const CATS=RULES.map(r=>r[0]);
-const isDate=(label,m)=>label==='계좌번호'&&/^(19|20)\d{2}-\d{2}-\d{2}$/.test(m);
+const ACCT_CTX=/(?<!\[)(?:계좌|통장|입금|은행|환불|account)/i;   /* [계좌번호_1] 같은 이름표 안의 말은 빼고 */
+/* 계좌번호 규칙: 날짜(2026-10-21)는 빼고, 하이픈 없는 긴 숫자는 앞 20자 안에 계좌 관련 말이 있을 때만 ("주문번호 44280101080107"은 그대로) */
+const ACCT=RULES.find(r=>r[0]==='계좌번호')[1];   /* 맥락 확인은 이 규칙에만 (표 머리글로 찾은 계좌번호는 그대로 가림) */
+const skipHit=(re,m,s,i)=>re===ACCT&&(/^(19|20)\d{2}-\d{2}-\d{2}$/.test(m)||!m.includes('-')&&!ACCT_CTX.test(s.slice(Math.max(0,i-20),i)));
 /* 숫자 셀 앞에 0을 붙여 볼 때는 휴대전화·주민번호만 (250000000원 같은 금액이 전화번호로 가려지지 않게) */
 const ZERO=RULES.filter(([l])=>l==='휴대전화'||l==='주민등록번호').map(([,re])=>new RegExp('^(?:'+re.source+')$'));
 /* 전각 숫자 → 일반 숫자 (글자 수가 같아 위치가 그대로). 검사만 바꾼 글로 하고 결과에는 원래 글자를 씀 */
 const norm=s=>s.replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0));
-function wordsRule(raw){
-  const ws=norm(raw).split(/[,\n]/).map(s=>s.trim()).filter(Boolean).sort((a,b)=>b.length-a.length);
-  return ws.length?new RegExp(ws.map(w=>w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|'),'g'):null;
-}
+const valuesRule=ws=>ws.length?new RegExp([...ws].sort((a,b)=>b.length-a.length).map(w=>w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|'),'g'):null;
+const wordsRule=raw=>valuesRule(norm(raw).split(/[,\n]/).map(s=>s.trim()).filter(Boolean));
 /* 규칙을 순서대로 적용. 찾은 값은 잠시 보호 문자로 바꿔 두어서, 꺼 둔 항목이 다른 항목으로 잘못 가려지지 않게 함 */
 const PUA=n=>[...n.toString(16)].map(c=>String.fromCharCode(0xE010+parseInt(c,16))).join('');
 /* 결과는 [그대로인 조각] 또는 [찾은 값, 바꿀 값]의 목록 → Word에서 바꿀 부분만 고쳐 서식을 유지할 때 사용 */
-function scanParts(text,wordsRaw,cats,onHit){
+function scanParts(text,wordsRaw,cats,onHit,extra={}){
   const rules=[...RULES],w=wordsRule(wordsRaw);if(w)rules.unshift(['지정어',w]);
+  for(const [l,re] of Object.entries(extra))rules.unshift([l,re]);   /* 엑셀 표 머리글로 찾은 이름·계좌번호 */
   const keep=[];let s=norm(text),o=text;   /* s: 검사용(전각 숫자를 일반 숫자로), o: 원래 글자. 둘은 같은 자리에 같은 보호 문자가 들어가 위치가 맞음 */
   for(const [label,re] of rules){
-    const on=label==='지정어'||cats.has(label);
+    const on=label==='지정어'||label==='이름'||cats.has(label);
     let ns='',no='',last=0;
     for(const x of s.matchAll(re)){
       const m=x[0],v=o.slice(x.index,x.index+m.length);
-      if(isDate(label,m))continue;
+      if(skipHit(re,m,s,x.index))continue;
       keep.push([v,onHit(label,v,on,m)]);
       const ph='\uE000'+PUA(keep.length-1)+'\uE001';
       ns+=s.slice(last,x.index)+ph;no+=o.slice(last,x.index)+ph;last=x.index+m.length;
@@ -498,7 +500,7 @@ const scan=(...a)=>scanParts(...a).map(p=>p[p.length-1]).join('');
 /* 일부만 가리기 */
 function maskDigits(m,first,last){const total=(m.match(/\d/g)||[]).length;let i=0;return m.replace(/\d/g,d=>{const k=i++;return k<first||k>=total-last?d:'*';});}
 function partial(label,m){
-  if(label==='지정어'){const c=[...m];return c.length<=2?c[0]+'*'.repeat(c.length-1):c[0]+'*'.repeat(c.length-2)+c[c.length-1];}
+  if(label==='지정어'||label==='이름'){const c=[...m];return c.length<=2?c[0]+'*'.repeat(c.length-1):c[0]+'*'.repeat(c.length-2)+c[c.length-1];}
   if(label==='이메일'){const i=m.indexOf('@'),l=m.slice(0,i),k=l.length>2?2:1;return l.slice(0,k)+'*'.repeat(Math.max(1,l.length-k))+m.slice(i);}
   if(label==='IP주소'){const p=m.split('.');return p[0]+'.'+p[1]+'.*.*';}
   if(label==='여권번호')return m[0]+'****'+m.slice(-4);
@@ -519,7 +521,9 @@ function makeMasker(mode,wordsRaw,cats){
     if(!SES.seen[k]){SES.cnt[label]=(SES.cnt[label]||0)+1;SES.seen[k]='['+label+'_'+SES.cnt[label]+']';SES.map[SES.seen[k]]=m;}
     return SES.seen[k];
   };
-  return {fn:s=>scan(s,wordsRaw,cats,hit),parts:s=>scanParts(s,wordsRaw,cats,hit),found};
+  const vals={},extra={};
+  const addValues=(label,vs)=>{const set=vals[label]||(vals[label]=new Set());vs.forEach(v=>set.add(norm(v)));extra[label]=valuesRule([...set]);};
+  return {fn:s=>scan(s,wordsRaw,cats,hit,extra),parts:s=>scanParts(s,wordsRaw,cats,hit,extra),found,addValues};
 }
 /* 마스킹 후 재검사: 켜 둔 항목이 남아 있는지(left), 꺼 둔 항목이 얼마나 있는지(off) */
 function recheck(text,cats,wordsRaw){
@@ -660,8 +664,36 @@ async function maskDocx(buf,M,meta){
   if(meta)await stripMeta(zip);
   return zip.generateAsync({type:'blob',compression:'DEFLATE',mimeType:OUT.docx});
 }
+/* 엑셀 표: 같은 열 위쪽 제목 칸이나 바로 왼쪽 칸이 '계좌…'·'성명…'이면 그 칸의 값을 계좌번호·이름으로 봄 (파일 전체에서 가림) */
+const ACCT_H=/계좌|통장|입금|환불|account/i,NAME_H=/성명|이름|예금주|대표자|담당자|신청자|보호자|학생명|고객명|name/i;
+const NOT_NAME=/번호|연락처|전화|주소|메일|생년|일자|날짜|코드/,NOT_VAL=/^(합계|소계|총계|계|비고|없음|해당\s*없음|예|아니오|남|여)$/;
+function headKind(t){t=(t||'').trim();if(!t||t.length>12)return '';if(ACCT_H.test(t))return '계좌번호';if(NAME_H.test(t)&&!NOT_NAME.test(t))return '이름';return '';}
+function tableValues(cells){   /* cells: [{c:열 번호, r:행 번호, t:글자}] (시트 하나) */
+  const at=new Map(cells.map(x=>[x.c+','+x.r,x.t])),head={},out={계좌번호:[],이름:[]};
+  for(const x of cells){const k=headKind(x.t);if(k&&x.r<=20&&!(head[x.c]&&head[x.c].r<x.r))head[x.c]={k,r:x.r};}   /* 열마다 맨 위 제목 칸 */
+  for(const x of cells){
+    const t=x.t.trim();
+    for(const k of [head[x.c]&&x.r>head[x.c].r?head[x.c].k:'',headKind(at.get((x.c-1)+','+x.r))]){
+      if(k==='계좌번호'&&/^[\d\s-]+$/.test(t)&&/^\d{10,16}$/.test(t.replace(/[\s-]/g,'')))out[k].push(t);
+      if(k==='이름'&&!NOT_VAL.test(t)&&!headKind(t)&&/^[가-힣A-Za-z][가-힣A-Za-z .·]{1,19}$/.test(t)&&t.split(/\s+/).length<=4)out[k].push(t);
+    }
+  }
+  return out;
+}
 async function maskXlsx(buf,M,meta){
   const zip=await openZip(buf);
+  const ssf=zip.file('xl/sharedStrings.xml'),parse=async f=>new DOMParser().parseFromString(await f.async('string'),'application/xml');
+  const ss=ssf?els(await parse(ssf),S,'si').map(si=>els(si,S,'t').map(t=>t.textContent).join('')):[];
+  for(const n of Object.keys(zip.files)){
+    if(!/^xl\/worksheets\/sheet\d+\.xml$/.test(n))continue;
+    const cells=[];
+    for(const c of els(await parse(zip.file(n)),S,'c')){
+      const ref=(c.getAttribute('r')||'').match(/^([A-Z]+)(\d+)$/),t=c.getAttribute('t'),v=els(c,S,'v')[0];if(!ref)continue;
+      const text=t==='s'?ss[+(v&&v.textContent)]:t==='inlineStr'?els(c,S,'t').map(x=>x.textContent).join(''):v&&v.textContent;
+      if(text)cells.push({c:[...ref[1]].reduce((a,ch)=>a*26+ch.charCodeAt(0)-64,0),r:+ref[2],t:text});
+    }
+    const found=tableValues(cells);for(const k in found)if(found[k].length)M.addValues(k,found[k]);
+  }
   const grp=root=>maskGroup(els(root,S,'t').filter(t=>['r','si','is','text'].includes(t.parentNode.localName)),M);
   for(const n of Object.keys(zip.files)){
     if(n==='xl/sharedStrings.xml')await editXml(zip,n,d=>els(d,S,'si').forEach(grp));
