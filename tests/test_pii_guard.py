@@ -3,7 +3,7 @@
 실행:  python -m unittest discover tests
 필요:  pip install python-docx openpyxl pypdf olefile
 """
-import os, re, sys, tempfile, unittest, zipfile, zlib
+import html, os, re, sys, tempfile, unittest, zipfile, zlib
 from pathlib import Path
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -79,6 +79,21 @@ class Rules(unittest.TestCase):
             with self.subTest(src=src):
                 self.assertEqual(g.Masker(part=True).text(src), want)
         self.assertEqual(g.Masker(['홍길동'], part=True).text('홍길동'), '홍*동')
+
+    def test_formats_table_on_page_is_true(self):
+        """웹 화면의 「자동으로 찾는 정보와 모양」 표: '찾아요' 예시는 가려지고 '못 찾아요' 예시는 그대로여야 함."""
+        page = Path(ROOT, 'index.html').read_text(encoding='utf-8')
+        table = page[page.index('id="formats"'):]
+        table = table[:table.index('</section>')]
+        cells = {kind: [html.unescape(c) for td in re.findall(rf'<td class="{kind}">(.*?)</td>', table) for c in re.findall(r'<code>(.*?)</code>', td)]
+                 for kind in ('ok', 'no')}
+        self.assertGreater(len(cells['ok']), 20)
+        for x in cells['ok']:
+            with self.subTest(찾아요=x):
+                self.assertNotEqual(g.Masker().text(x), x)
+        for x in cells['no']:
+            with self.subTest(못찾아요=x):
+                self.assertEqual(g.Masker().text(x), x)
 
     def test_same_value_same_token_and_words(self):
         M = g.Masker(['홍길동'])
