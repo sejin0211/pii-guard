@@ -281,11 +281,16 @@ python pii_guard.py 계약서.pdf 신청자.xlsx --lock-only     # 잠그기만
 <details>
 <summary><b>🧪 테스트한 것 / 안 한 것</b></summary>
 
-**저장소에 있는 테스트** (탐지 규칙, Word 서식 유지·숨은 글자, 한글 .hwpx 서식 유지·.hwp 글자 추출, Excel 숫자 셀·재검사, 텍스트 인코딩, 웹·파이썬 규칙 일치)
+**저장소에 있는 테스트**
+- `tests/test_pii_guard.py`: 탐지 규칙, Word 서식 유지·숨은 글자, 한글 .hwpx 서식 유지·.hwp 글자 추출, Excel 숫자 셀·머리글·재검사, 텍스트 인코딩, 웹·파이썬 규칙 일치, 화면의 「찾는 모양」 표가 실제 동작과 같은지
+- `tests/test_web.py`: 웹 도구를 Edge·Chrome으로 열어 실제 버튼으로 글·Word·Excel·한글·PDF·텍스트를 처리하고 결과 파일을 확인. 웹·파이썬 결과 비교(무작위 문장), 외부 요청 0건·JS 오류 없음도 매번 확인. OCR은 페이지를 http로 띄웠을 때만
 
 ```bash
-pip install python-docx openpyxl pypdf olefile
-python -m unittest discover tests
+pip install python-docx openpyxl pypdf olefile playwright reportlab pillow
+python -m unittest tests.test_pii_guard
+python -m unittest tests.test_web                       # Edge (PII_BROWSER=chrome 으로 Chrome)
+python -m http.server 8765 --bind 127.0.0.1             # OCR까지: 다른 창에서 띄운 뒤
+PII_URL=http://127.0.0.1:8765/index.html python -m unittest tests.test_web
 ```
 
 **개발 중 따로 확인한 것**
@@ -330,6 +335,23 @@ python -m unittest discover tests
 ---
 
 ## 📝 변경 기록
+
+### 2026-11-03
+
+**집중 테스트에서 찾은 문제 수정**
+- 🟠 재검사 오경고: `입금 계좌 44280101080107 / 주문번호 44280101080108`을 가린 뒤 재검사가 주문번호를 계좌번호로 경고하던 문제. 계좌 맥락은 이제 **바로 앞 번호(또는 이름표) 뒤부터** 봐서, 가리기 전과 후의 판단이 같아요. (웹 · 파이썬)
+- 🟡 속도: 파이썬 도구로 2만 행 명단(성명·계좌 열)을 처리하는 시간 29.9초 → 6.2초. 찾은 값 수만 개를 글자 단위 트리 모양 정규식으로 검사해요. (웹은 원래 3.3초)
+- 🧪 브라우저 테스트를 저장소에 넣었어요(`tests/test_web.py`). 임시 폴더에만 두었던 테스트가 지워져서, 누구나 다시 돌릴 수 있게 했어요.
+
+**테스트 결과** — ✅ 모두 통과
+| 테스트 | 결과 |
+|---|---|
+| 파이썬 자동 테스트 (`tests/test_pii_guard.py`) | ✅ 16개 |
+| 웹 브라우저 테스트 (`tests/test_web.py`, OCR 포함) | ✅ Edge 10/10, **Chrome 10/10** (Chrome은 처음 확인) |
+| 웹·파이썬 결과 비교 (무작위 문장 28,717개 × 이름표·일부만·별표) | ✅ Edge·Chrome 모두 차이 0건, 이름표 복원 실패 0건 |
+| 큰 파일: 2만 행 엑셀 명단 (이름 4만·계좌 2만·휴대전화 2만 건) | ✅ 웹 3.3초, 파이썬 6.2초, 재검사 남은 항목 없음 |
+
+알려진 한계: 원문에 이미 `[계좌번호_1]` 같은 이름표 모양 글자가 있으면(이미 가린 글을 다시 넣는 경우) 복원할 때 그 글자도 바뀔 수 있어요.
 
 ### 2026-10-28
 

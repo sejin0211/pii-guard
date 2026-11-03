@@ -44,7 +44,8 @@ RULES = [   # index.html의 RULES와 정규식이 같아야 함 (tests/test_pii_
 ]
 DATE = C(r'(19|20)\d{2}-\d{2}-\d{2}')  # 날짜를 계좌번호로 오인하지 않도록
 ACCT_CTX = re.compile(r'(?<!\[)(?:계좌|통장|입금|은행|환불|account)', re.I)   # 하이픈 없는 계좌번호 앞에 있어야 할 말 (웹과 같음)
-ACCT = dict(RULES)['계좌번호']   # 맥락 확인은 이 규칙에만 (표 머리글로 찾은 계좌번호는 그대로 가림)
+ACCT = dict(RULES)['계좌번호']
+LAST_NUM = re.compile(r'^.*[\d\]' + chr(0xE000) + '-' + chr(0xE01F) + ']', re.S)   # 맥락은 바로 앞 숫자·이름표 뒤부터 ("계좌 X / 주문번호 Y"의 Y는 계좌 아님)
 # 숫자 셀 앞에 0을 붙여 볼 때는 이 둘만 (250000000원 같은 금액이 02-5000-0000 전화번호로 가려지지 않게).
 # shortcut: 10억대 금액 중 10·11·16~19로 시작하는 값은 여전히 휴대전화로 보임, 셀 표시 형식까지 볼 필요가 생기면 그때 바꿈
 ZERO = [rx for label, rx in RULES if label in ('휴대전화', '주민등록번호')]
@@ -90,6 +91,25 @@ def partial(label, m):
     return ''.join('*' if i in hide else c for i, c in enumerate(m))
 
 
+def trie_pattern(words):
+    """값 목록을 글자 단위 트리 모양 정규식으로 (긴 값 우선). '홍길동|홍길'처럼 늘어놓으면 수만 개일 때 매우 느려서
+    (2만 행 명단의 계좌번호 2만 개: 70초 → 트리: 수 초)."""
+    tree = {}
+    for w in words:
+        node = tree
+        for ch in w:
+            node = node.setdefault(ch, {})
+        node[''] = {}
+
+    def pat(node):
+        alts = [re.escape(ch) + pat(child) for ch, child in sorted(node.items()) if ch]
+        if not alts:
+            return ''
+        body = alts[0] if len(alts) == 1 else '(?:' + '|'.join(alts) + ')'
+        return '(?:' + body + ')?' if '' in node else body
+    return pat(tree)
+
+
 class Masker:
     def __init__(self, words=(), star=False, part=False):
         self.star, self.part, self.map, self.seen, self.cnt, self.found = star, part, {}, {}, {}, {}
@@ -102,7 +122,7 @@ class Masker:
     def add_values(self, label, vals):
         """표 머리글로 찾은 값(이름·계좌번호)을 파일 전체에서 가리도록 규칙 앞에 넣음."""
         self.vals.setdefault(label, set()).update(v.translate(FW) for v in vals)
-        self.extra[label] = re.compile('|'.join(map(re.escape, sorted(self.vals[label], key=len, reverse=True))))
+        self.extra[label] = re.compile(trie_pattern(self.vals[label]))
 
     def text(self, s):
         return ''.join(p[-1] for p in self.parts(s))
@@ -117,7 +137,7 @@ class Masker:
             ns, no, last = [], [], 0
             for m in rx.finditer(s):
                 g = m.group(0)   # 계좌번호: 날짜는 그대로, 하이픈 없는 긴 숫자는 앞 20자 안에 계좌 관련 말이 있을 때만
-                if rx is ACCT and (DATE.fullmatch(g) or '-' not in g and not ACCT_CTX.search(s[max(0, m.start() - 20):m.start()])):
+                if rx is ACCT and (DATE.fullmatch(g) or '-' not in g and not ACCT_CTX.search(LAST_NUM.sub('', s[max(0, m.start() - 20):m.start()]))):
                     continue
                 v = o[m.start():m.end()]
                 keep.append([v, self._sub(label, v)])
