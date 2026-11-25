@@ -322,12 +322,12 @@ h2 .mini{margin-left:auto;padding:5px 12px;font-size:13px;font-weight:600;border
       <tr><th scope="row">휴대전화</th><td class="ok"><code>010-1234-5678</code> <code>01012345678</code> <code>010.1234.5678</code> <code>(010)1234-5678</code> <code>０１０-１２３４-５６７８</code></td><td class="no"><code>공일공-1234-5678</code> <code>010 - 1234 - 5678</code></td></tr>
       <tr><th scope="row">일반 전화</th><td class="ok"><code>02-123-4567</code> <code>(02)123-4567</code> <code>031-123-4567</code> <code>070-1234-5678</code> <code>+82 2-123-4567</code></td><td class="no"><code>1588-1234</code> <small>대표번호</small></td></tr>
       <tr><th scope="row">이메일</th><td class="ok"><code>name@example.com</code></td><td class="no"><code>name(at)example.com</code></td></tr>
-      <tr><th scope="row">계좌번호</th><td class="ok"><code>110-123-456789</code> <code>4428-010-108-0107</code> <code>입금 계좌 44280101080107</code><br><small>하이픈이 없으면 앞에 계좌·통장·입금·은행·환불 같은 말이 있을 때만</small></td><td class="no"><code>주문번호 44280101080107</code> <code>2026-10-21</code> <small>날짜</small></td></tr>
+      <tr><th scope="row">계좌번호</th><td class="ok"><code>110-123-456789</code> <code>1234-010-567-8901</code> <code>입금 계좌 12340105678901</code><br><small>하이픈이 없으면 앞에 계좌·통장·입금·은행·환불 같은 말이 있을 때만</small></td><td class="no"><code>주문번호 12340105678901</code> <code>2026-10-21</code> <small>날짜</small></td></tr>
       <tr><th scope="row">카드번호</th><td class="ok"><code>1234-5678-9012-3456</code> <code>1234567890123456</code></td><td class="no"></td></tr>
       <tr><th scope="row">사업자등록번호</th><td class="ok"><code>123-45-67890</code></td><td class="no"></td></tr>
       <tr><th scope="row">여권번호</th><td class="ok"><code>M12345678</code> <code>M123A4567</code></td><td class="no"></td></tr>
       <tr><th scope="row">IP 주소</th><td class="ok"><code>192.168.0.15</code></td><td class="no"><code>1.2.3.4.5</code> <small>버전 번호</small></td></tr>
-      <tr><th scope="row">주소</th><td class="ok"><code>서울시 송파구 위례송파로 123, 1706동 804호</code> <code>구리시 갈매중앙로 16, 709-702</code> <code>서울 송파구 장지동 123-4</code><br><small>시·도와 시·군·구가 둘 다 있거나, 하나만 있으면 동·호수까지</small></td><td class="no"><code>송파구 위례송파로 123</code> <small>시·도도 동·호수도 없음</small></td></tr>
+      <tr><th scope="row">주소</th><td class="ok"><code>서울시 송파구 한빛로 123, 101동 202호</code> <code>구리시 새솔로 34, 103-405</code> <code>서울 송파구 장지동 123-4</code><br><small>① 시·도와 시·군·구가 함께 있으면 찾아요<br>② 둘 중 하나만 있으면 동·호수까지 있어야 찾아요</small></td><td class="no"><code>송파구 한빛로 123</code> <small>시·도도 동·호수도 없음</small></td></tr>
       <tr><th scope="row">이름</th><td class="ok">「추가로 가릴 단어」에 적은 이름<br><small>파일 탭의 엑셀 표에서는 성명·이름·예금주 열을 자동으로 찾아요</small></td><td class="no"><code>홍길동님께</code> <small>문장 속 이름은 자동으로 못 찾음</small></td></tr>
       </tbody>
     </table>
@@ -494,14 +494,14 @@ const RULES=[   /* pii_guard.py의 RULES와 정규식이 같아야 함 (tests/te
   ['여권번호',/(?<![A-Za-z0-9])[MSROD](?:\d{8}|\d{3}[A-Z]\d{4})(?![A-Za-z0-9])/g],  /* 신형(2021~): M123A4567 */
   ['IP주소',/(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?!\d|\.\d)/g],
   ['계좌번호',/(?<!\d)(?:\d{2,6}-\d{2,6}-\d{2,8}(?:-\d{1,4})?|\d{10,16})(?!\d)/g],  /* 하이픈 없는 10~16자리는 앞에 계좌 관련 말이 있을 때만 (skipHit) */
-  /* 도로명·지번 주소. 시·도와 시·군·구가 둘 다 있으면 그대로, 하나만 있으면 동·층·호(709-702 포함)까지 있어야 함 ("경기 결과로 3배" 같은 오탐 방지) */
+  /* 도로명·지번 주소. 시·도와 시·군·구가 둘 다 있으면 그대로, 하나만 있으면 동·층·호(103-405 포함)까지 있어야 함 ("경기 결과로 3배" 같은 오탐 방지) */
   ['주소',/(?<![가-힣])(?:(?:서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충청북|충청남|충북|충남|전라북|전라남|전북|전남|경상북|경상남|경북|경남|제주)(?:특별시|광역시|특별자치시|특별자치도|도|시)?\s+(?:[가-힣]+(?:시|군|구)\s+){1,2}(?:[가-힣]+(?:읍|면)\s+)?[가-힣0-9]+(?:로|길|동|리|가)(?:\s*\d+번?길)?\s*\d+(?:-\d+)?(?:번지)?(?!\d)(?:,?\s*[0-9A-Za-z]+동(?:\s*\d+층)?(?:\s*[0-9A-Za-z-]+호)?|,?\s*\d+층(?:\s*[0-9A-Za-z-]+호)?|,?\s*[0-9A-Za-z-]+호|,?\s*\d{1,4}-\d{1,4}(?![\d-]))?|(?:(?:서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충청북|충청남|충북|충남|전라북|전라남|전북|전남|경상북|경상남|경북|경남|제주)(?:특별시|광역시|특별자치시|특별자치도|도|시)?\s+|(?:[가-힣]+(?:시|군|구)\s+){1,2})(?:[가-힣]+(?:읍|면)\s+)?[가-힣0-9]+(?:로|길|동|리|가)(?:\s*\d+번?길)?\s*\d+(?:-\d+)?(?:번지)?(?!\d)(?:,?\s*[0-9A-Za-z]+동(?:\s*\d+층)?(?:\s*[0-9A-Za-z-]+호)?|,?\s*\d+층(?:\s*[0-9A-Za-z-]+호)?|,?\s*[0-9A-Za-z-]+호|,?\s*\d{1,4}-\d{1,4}(?![\d-])))/g]
 ];
 /* 토큰 번호는 이 페이지를 열어 둔 동안 텍스트·파일 전체에서 공유 → 어디서든 복원 가능 */
 const SES={seen:{},cnt:{},map:{}};
 const CATS=RULES.map(r=>r[0]);
 const ACCT_CTX=/(?<!\[)(?:계좌|통장|입금|은행|환불|account)/i;   /* [계좌번호_1] 같은 이름표 안의 말은 빼고 */
-/* 계좌번호 규칙: 날짜(2026-10-21)는 빼고, 하이픈 없는 긴 숫자는 바로 앞 20자 안에 계좌 관련 말이 있을 때만 ("주문번호 44280101080107"은 그대로) */
+/* 계좌번호 규칙: 날짜(2026-10-21)는 빼고, 하이픈 없는 긴 숫자는 바로 앞 20자 안에 계좌 관련 말이 있을 때만 ("주문번호 12340105678901"은 그대로) */
 const ACCT=RULES.find(r=>r[0]==='계좌번호')[1];   /* 맥락 확인은 이 규칙에만 (표 머리글로 찾은 계좌번호는 그대로 가림) */
 const skipHit=(re,m,s,i)=>re===ACCT&&(/^(19|20)\d{2}-\d{2}-\d{2}$/.test(m)||!m.includes('-')&&!ACCT_CTX.test(s.slice(Math.max(0,i-20),i).replace(/^[^]*[\d\]\uE000-\uE01F]/,'')));   /* 맥락은 바로 앞 숫자·이름표 뒤부터 ("계좌 X / 주문번호 Y"의 Y는 계좌 아님) */
 /* 숫자 셀 앞에 0을 붙여 볼 때는 휴대전화·주민번호만 (250000000원 같은 금액이 전화번호로 가려지지 않게) */
@@ -877,7 +877,7 @@ async function readPage(page,draw,onOcr){
   else{
     onOcr();
     const lines=(await (await ocrWorker()).recognize(c,{},{blocks:true})).data.blocks.flatMap(b=>b.paragraphs.flatMap(p=>p.lines));
-    for(const l of lines){   /* 단어 사이 빈칸은 OCR의 줄 글자를 따름 ("갈매중앙로"를 "갈 매 중앙로"처럼 쪼개 돌려줘도 붙여서 검사) */
+    for(const l of lines){   /* 단어 사이 빈칸은 OCR의 줄 글자를 따름 ("새솔로"를 "새 솔로"처럼 쪼개 돌려줘도 붙여서 검사) */
       const lt=l.text.replace(/\n$/,'');let cur=0;
       l.words.forEach((w,i)=>{const b=w.bbox,at=lt.indexOf(w.text,cur);
         if(at>=0){if(at>cur)ch.push({s:lt.slice(cur,at)});cur=at+w.text.length;}else if(i)ch.push({s:' '});

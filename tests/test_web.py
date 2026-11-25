@@ -5,6 +5,7 @@
 브라우저: 환경 변수 PII_BROWSER=msedge(기본)|chrome
 OCR(스캔본 PDF)까지 확인하려면 저장소 폴더를 http로 띄우고 그 주소를 PII_URL로 주세요.
        python -m http.server 8765 --bind 127.0.0.1   →   PII_URL=http://127.0.0.1:8765/index.html
+웹·파이썬 비교 문장 수: PII_FUZZ (기본 4000, 집중 테스트 때는 30000)
 """
 import io, os, random, re, sys, tempfile, unittest, zipfile, zlib
 from pathlib import Path
@@ -136,19 +137,19 @@ class Web(unittest.TestCase):
     def test_text_mask_restore_partial(self):
         src = ('홍길동님(900101-1234567) 연락처 010-1234-5678, 메일 gildong.hong@example.com\n'
                '서버 IP는 192.168.0.15. 접수 2026-10-21, 버전 1.2.3.4.5\n'
-               '환불 계좌 4428-010-108-0107 / 입금 계좌 44280101080107 / 주문번호 44280101080108\n'
-               '주소: 서울시 송파구 위례송파로 123, 1706동 804호')
+               '환불 계좌 1234-010-567-8901 / 입금 계좌 12340105678901 / 주문번호 12340105678902\n'
+               '주소: 서울시 송파구 한빛로 123, 101동 202호')
         out, msg = self.text(src, words='홍길동')
-        for s in ('홍길동', '900101-1234567', '010-1234-5678', 'gildong', '192.168.0.15', '4428-010-108-0107', '44280101080107', '위례송파로 123'):
+        for s in ('홍길동', '900101-1234567', '010-1234-5678', 'gildong', '192.168.0.15', '1234-010-567-8901', '12340105678901', '한빛로 123'):
             self.assertNotIn(s, out)
-        for s in ('2026-10-21', '1.2.3.4.5', '주문번호 44280101080108'):
+        for s in ('2026-10-21', '1.2.3.4.5', '주문번호 12340105678902'):
             self.assertIn(s, out)
         self.assertIn('✅ 재검사', msg)
         pg = self.page
         pg.fill('#ans', out); pg.click('#rs')
         self.assertEqual(pg.input_value('#rout'), src)   # 이름표 → 원래 정보
         out, _ = self.text(src, 'partial', '홍길동')
-        for s in ('홍*동', '900101-1******', '010-****-5678', '192.168.*.*.', '4428-***-***-0107', '442*******0107', '위례송파로 ***, ****동 ***호'):
+        for s in ('홍*동', '900101-1******', '010-****-5678', '192.168.*.*.', '1234-***-***-8901', '123*******8901', '한빛로 ***, ***동 ***호'):
             self.assertIn(s, out)
 
     def test_chip_off_and_formats_table(self):
@@ -170,15 +171,17 @@ class Web(unittest.TestCase):
     def test_web_and_python_agree(self):
         """같은 문장을 웹·파이썬에 넣으면 세 가지 방식 모두 글자 하나까지 같아야 함 (무작위 문장)."""
         rnd = random.Random(20261103)
-        words = ['계좌', '입금', '은행', '주문번호', '연락처', '홍길동', '서울시', '경기도', '송파구', '구리시', '위례송파로', '갈매중앙로',
+        words = ['계좌', '입금', '은행', '주문번호', '연락처', '홍길동', '서울시', '경기도', '송파구', '구리시', '한빛로', '새솔로',
                  '대왕판교로', '번길', '동', '호', '층', 'account', 'kim.yh@example.com', 'M', '+82 ', '(', ')']
         def num():
             d = ''.join(rnd.choice('0123456789') for _ in range(rnd.choice([1, 2, 3, 4, 4, 6, 7, 10, 11, 13, 14, 16])))
             return ('01' + rnd.choice('016789') + d[3:]) if rnd.random() < .15 else d
         cases = list(dict.fromkeys(''.join((num() if rnd.random() < .5 else rnd.choice(words)) + rnd.choice(['-', '.', ' ', '', ',', '/', ' - '])
-                                           for _ in range(rnd.randint(1, 8))) for _ in range(4000)))
+                                           for _ in range(rnd.randint(1, 8))) for _ in range(int(os.environ.get('PII_FUZZ', 4000)))))
         web = self.page.evaluate("""xs => xs.map(s => ['token', 'partial', 'star'].map(mode => {
-            SES.seen = {}; SES.cnt = {}; SES.map = {}; return makeMasker(mode, '홍길동', new Set(CATS)).fn(s); }))""", cases)
+            SES.seen = {}; SES.cnt = {}; SES.map = {}; const t = makeMasker(mode, '홍길동', new Set(CATS)).fn(s);
+            if (mode === 'token') { let r = t; for (const [k, v] of Object.entries(SES.map)) r = r.split(k).join(v); if (r !== s) return 'RESTORE_FAIL'; }
+            return t; }))""", cases)
         diff = [(s, mode, py, w) for s, ws in zip(cases, web) for mode, py, w in zip(
             ('token', 'partial', 'star'), (g.Masker(['홍길동']).text(s), g.Masker(['홍길동'], part=True).text(s), g.Masker(['홍길동'], star=True).text(s)), ws) if py != w]
         self.assertEqual(diff[:5], [])
@@ -217,8 +220,8 @@ class Web(unittest.TestCase):
         wb = openpyxl.Workbook(); ws = wb.active
         ws.append(['2026 환불 신청자 명단'])
         ws.append(['성명', '계좌', '주문번호', '금액', '연락처', '비고'])
-        ws.append(['홍길동', 44280101080107, 44280101080108, 250000000, 1012345678, '홍길동 확인'])
-        ws.append(['Kim Young Hee', '4428-010-108-0107', 'A-1', 3112345678, 501014123456, ''])
+        ws.append(['홍길동', 12340105678901, 12340105678902, 250000000, 1012345678, '홍길동 확인'])
+        ws.append(['Kim Young Hee', '1234-010-567-8901', 'A-1', 3112345678, 501014123456, ''])
         ws.append(['합계', '', '', '', '', ''])
         ws['F4'].comment = Comment('예비 연락처 010-9876-5432', '작성자')
         ws['F4'].value = '메일'; ws['F4'].hyperlink = 'mailto:kim.yh@example.com'
@@ -233,14 +236,14 @@ class Web(unittest.TestCase):
         w = openpyxl.load_workbook(path); s1, s2 = w.worksheets
         row3, row4 = [c.value for c in s1[3]], [c.value for c in s1[4]]
         self.assertTrue(str(row3[0]).startswith('[이름_') and str(row3[1]).startswith('[계좌번호_') and str(row4[0]).startswith('[이름_'))
-        self.assertEqual((row3[2], row3[3], row4[3]), (44280101080108, 250000000, 3112345678))   # 주문번호·금액은 그대로
+        self.assertEqual((row3[2], row3[3], row4[3]), (12340105678902, 250000000, 3112345678))   # 주문번호·금액은 그대로
         self.assertTrue(row3[4].startswith('[휴대전화_') and row4[4].startswith('[주민등록번호_'))   # 앞자리 0이 지워진 번호
         self.assertTrue(str(row3[5]).endswith(' 확인') and '홍길동' not in str(row3[5]))   # 찾은 이름은 다른 칸에서도
         self.assertEqual((s1['A2'].value, s1['A5'].value), ('성명', '합계'))
         self.assertTrue(str(s2['B1'].value).startswith('[이름_') and str(s2['B2'].value).startswith('[계좌번호_'))
         with zipfile.ZipFile(path) as z:
             xml = '\n'.join(z.read(n).decode('utf-8', 'replace') for n in z.namelist() if n.endswith(('.xml', '.rels')))
-        for s in ('010-9876-5432', 'kim.yh', 'lee.sj', '홍길동', '44280101080107'):
+        for s in ('010-9876-5432', 'kim.yh', 'lee.sj', '홍길동', '12340105678901'):
             self.assertNotIn(s, xml)
 
     def test_text_files(self):
@@ -260,7 +263,7 @@ class Web(unittest.TestCase):
         from reportlab.pdfgen import canvas
         pdfmetrics.registerFont(TTFont('Malgun', str(FONT)))
         cv = canvas.Canvas(self.p('a.pdf')); cv.setFont('Malgun', 13)
-        for i, s in enumerate(['성명: 홍길동   주민등록번호: 901023-1234567', '휴대전화: 010-9249-5149 (평일)', '비고: 2026-10-21 접수']):
+        for i, s in enumerate(['성명: 홍길동   주민등록번호: 901023-1234567', '휴대전화: 010-2468-1357 (평일)', '비고: 2026-10-21 접수']):
             cv.drawString(60, 760 - i * 28, s)
         cv.save()
         [(pdf, info)] = self.files([self.p('a.pdf')], 'partial', 'pdf')
@@ -269,7 +272,7 @@ class Web(unittest.TestCase):
         self.assertEqual(''.join(x.extract_text() or '' for x in r.pages).strip(), '')   # 글자층 없음 → 복사해도 안 나옴
         [(txt, _)] = self.files([self.p('a.pdf')], 'partial', 'txt')
         t = Path(txt).read_text(encoding='utf-8')
-        for s in ('홍*동', '901023-1******', '010-****-5149', '2026-10-21'):
+        for s in ('홍*동', '901023-1******', '010-****-1357', '2026-10-21'):
             self.assertIn(s, t)
 
     def test_hwpx_and_hwp(self):
@@ -320,11 +323,11 @@ class Web(unittest.TestCase):
                 dr.text((150, 200 + i * 90), s, fill=0, font=font)
             im = im.rotate(0.4, fillcolor=255)   # 스캐너처럼 살짝 기울임
             return im.filter(ImageFilter.GaussianBlur(blur)) if blur else im
-        lines = ['개인정보 수집 동의서', '성명: 홍길동', '주민등록번호: 900101-1234567', '휴대전화: 010-9249-5149',
-                 '이메일: gildong.hong@example.com', '주소: 경기도 구리시 갈매중앙로 16, 709-702']
+        lines = ['개인정보 수집 동의서', '성명: 홍길동', '주민등록번호: 900101-1234567', '휴대전화: 010-2468-1357',
+                 '이메일: gildong.hong@example.com', '주소: 경기도 구리시 새솔로 34, 103-405']
         page(lines, 0).save(self.p('scan.pdf'), 'PDF', resolution=200, save_all=True,
-                            append_images=[page(['보호자 연락처 02-2260-3912', '계좌번호 110-123-456789'], .8)])
-        secrets = ['홍길동', '900101-1234567', '010-9249-5149', 'gildong.hong@example.com', '갈매중앙로16', '02-2260-3912', '110-123-456789']
+                            append_images=[page(['보호자 연락처 02-3456-7890', '계좌번호 110-123-456789'], .8)])
+        secrets = ['홍길동', '900101-1234567', '010-2468-1357', 'gildong.hong@example.com', '새솔로34', '02-3456-7890', '110-123-456789']
         (txt, info), = self.files([self.p('scan.pdf')], 'token', 'txt')
         self.assertIn('2쪽은 OCR로 읽음', info)
         self.assertEqual([s for s in secrets if flat(s) in flat(Path(txt).read_text(encoding='utf-8'))], [])
