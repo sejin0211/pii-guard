@@ -30,6 +30,8 @@ RULES = [   # index.html의 RULES와 정규식이 같아야 함 (tests/test_pii_
     ('사업자번호',   C(N + r'\d{3}-\d{2}-\d{5}' + X)),
     ('여권번호',     C(r'(?<![A-Za-z0-9])[MSROD](?:\d{8}|\d{3}[A-Z]\d{4})(?![A-Za-z0-9])')),  # 신형(2021~): M123A4567
     ('IP주소',       C(r'(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?!\d|\.\d)')),  # 문장 끝 마침표는 허용
+    # 학번(2021123456)·사번(20190301): 숫자만으로는 금액·날짜와 구별이 안 돼 앞 20자 안에 '학번·사번' 같은 말이 있을 때만 (Masker.parts)
+    ('학번·사번',    C(N + r'(?:19|20)\d{4,8}' + X)),
     # 하이픈 없는 10~16자리는 앞 20자 안에 계좌 관련 말이 있을 때만 (Masker.parts에서 확인)
     ('계좌번호',     C(N + r'(?:\d{2,6}-\d{2,6}-\d{2,8}(?:-\d{1,4})?|\d{10,16})' + X)),
     # 도로명·지번 주소. 시·도와 시·군·구가 둘 다 있으면 그대로, 하나만 있으면 동·층·호(103-405 포함)까지 있어야 함 ("경기 결과로 3배" 같은 오탐 방지)
@@ -45,6 +47,8 @@ RULES = [   # index.html의 RULES와 정규식이 같아야 함 (tests/test_pii_
 DATE = C(r'(19|20)\d{2}-\d{2}-\d{2}')  # 날짜를 계좌번호로 오인하지 않도록
 ACCT_CTX = re.compile(r'(?<!\[)(?:계좌|통장|입금|은행|환불|account)', re.I)   # 하이픈 없는 계좌번호 앞에 있어야 할 말 (웹과 같음)
 ACCT = dict(RULES)['계좌번호']
+ID_CTX = re.compile(r'(?<![\[가-힣·])(?:학번|사번|교번|직번)|(?<!\[)(?:학생|직원)\s*번호')   # 학번·사번 앞에 있어야 할 말 (웹과 같음). '검사번호'·이름표 [학번·사번_1]은 빼고
+ID = dict(RULES)['학번·사번']
 LAST_NUM = re.compile(r'^.*[\d\]' + chr(0xE000) + '-' + chr(0xE01F) + ']', re.S)   # 맥락은 바로 앞 숫자·이름표 뒤부터 ("계좌 X / 주문번호 Y"의 Y는 계좌 아님)
 # 숫자 셀 앞에 0을 붙여 볼 때는 이 둘만 (250000000원 같은 금액이 02-5000-0000 전화번호로 가려지지 않게).
 # shortcut: 10억대 금액 중 10·11·16~19로 시작하는 값은 여전히 휴대전화로 보임, 셀 표시 형식까지 볼 필요가 생기면 그때 바꿈
@@ -66,6 +70,8 @@ def partial(label, m):
     if label == 'IP주소':
         p = m.split('.')
         return f'{p[0]}.{p[1]}.*.*'
+    if label == '학번·사번':   # 앞 4자리(입학·입사 연도)만 남김
+        return m[:4] + '*' * (len(m) - 4)
     if label == '여권번호':
         return m[0] + '****' + m[-4:]
     if label == '주소':   # 지역·도로명은 남기고 번지·동·호수만 가림
@@ -137,7 +143,8 @@ class Masker:
             ns, no, last = [], [], 0
             for m in rx.finditer(s):
                 g = m.group(0)   # 계좌번호: 날짜는 그대로, 하이픈 없는 긴 숫자는 앞 20자 안에 계좌 관련 말이 있을 때만
-                if rx is ACCT and (DATE.fullmatch(g) or '-' not in g and not ACCT_CTX.search(LAST_NUM.sub('', s[max(0, m.start() - 20):m.start()]))):
+                ctx = LAST_NUM.sub('', s[max(0, m.start() - 20):m.start()])
+                if rx is ACCT and (DATE.fullmatch(g) or '-' not in g and not ACCT_CTX.search(ctx)) or rx is ID and not ID_CTX.search(ctx):
                     continue
                 v = o[m.start():m.end()]
                 keep.append([v, self._sub(label, v)])
@@ -254,12 +261,14 @@ def head_kind(t):
         return ''
     if ACCT_H.search(t):
         return '계좌번호'
+    if ID_CTX.search(t):
+        return '학번·사번'
     return '이름' if NAME_H.search(t) and not NOT_NAME.search(t) else ''
 
 
 def table_values(cells):
-    """cells: {(열, 행): 글자} (시트 하나). 돌려주는 값: {'계좌번호': [...], '이름': [...]}"""
-    head, out = {}, {'계좌번호': [], '이름': []}
+    """cells: {(열, 행): 글자} (시트 하나). 돌려주는 값: {'계좌번호': [...], '학번·사번': [...], '이름': [...]}"""
+    head, out = {}, {'계좌번호': [], '학번·사번': [], '이름': []}
     for (c, r), t in cells.items():   # 열마다 맨 위 제목 칸
         k = head_kind(t)
         if k and r <= 20 and not (c in head and head[c][1] < r):
@@ -268,6 +277,8 @@ def table_values(cells):
         t = t.strip()
         for k in (head[c][0] if c in head and r > head[c][1] else '', head_kind(cells.get((c - 1, r)))):
             if k == '계좌번호' and re.fullmatch(r'[\d\s-]+', t) and re.fullmatch(r'\d{10,16}', re.sub(r'[\s-]', '', t)):
+                out[k].append(t)
+            if k == '학번·사번' and re.fullmatch(r'[A-Za-z0-9-]{4,15}', t) and re.search(r'\d', t):
                 out[k].append(t)
             if (k == '이름' and not NOT_VAL.fullmatch(t) and not head_kind(t)
                     and re.fullmatch(r'[가-힣A-Za-z][가-힣A-Za-z .·]{1,19}', t) and len(t.split()) <= 4):

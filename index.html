@@ -177,7 +177,7 @@ h2 .mini{margin-left:auto;padding:5px 12px;font-size:13px;font-weight:600;border
     <p>질문이나 문서 속 주민등록번호·연락처·계좌번호를 자동으로 찾아 가리고, AI 답변에서는 원래 정보로 되돌릴 수 있습니다.</p>
     <ul class="chips">
       <li>🔒 서버로 전송하지 않음</li>
-      <li>🔍 10종 자동 탐지</li>
+      <li>🔍 11종 자동 탐지</li>
       <li>📄 Word·Excel·한글·PDF 파일 지원</li>
     </ul>
     <div class="tabs" role="tablist">
@@ -323,6 +323,7 @@ h2 .mini{margin-left:auto;padding:5px 12px;font-size:13px;font-weight:600;border
       <tr><th scope="row">일반 전화</th><td class="ok"><code>02-123-4567</code> <code>(02)123-4567</code> <code>031-123-4567</code> <code>070-1234-5678</code> <code>+82 2-123-4567</code></td><td class="no"><code>1588-1234</code> <small>대표번호</small></td></tr>
       <tr><th scope="row">이메일</th><td class="ok"><code>name@example.com</code></td><td class="no"><code>name(at)example.com</code></td></tr>
       <tr><th scope="row">계좌번호</th><td class="ok"><code>110-123-456789</code> <code>1234-010-567-8901</code> <code>입금 계좌 12340105678901</code><br><small>하이픈이 없으면 앞에 계좌·통장·입금·은행·환불 같은 말이 있을 때만</small></td><td class="no"><code>주문번호 12340105678901</code> <code>2026-10-21</code> <small>날짜</small></td></tr>
+      <tr><th scope="row">학번·사번</th><td class="ok"><code>학번 2021123456</code> <code>사번: 20190301</code> <code>교직원번호 20190301</code><br><small>앞에 학번·사번·교번·직번·학생번호·직원번호 같은 말이 있을 때만. 엑셀은 학번·사번 열도 찾아요</small></td><td class="no"><code>2021123456</code> <small>숫자만 있음</small></td></tr>
       <tr><th scope="row">카드번호</th><td class="ok"><code>1234-5678-9012-3456</code> <code>1234567890123456</code></td><td class="no"></td></tr>
       <tr><th scope="row">사업자등록번호</th><td class="ok"><code>123-45-67890</code></td><td class="no"></td></tr>
       <tr><th scope="row">여권번호</th><td class="ok"><code>M12345678</code> <code>M123A4567</code></td><td class="no"></td></tr>
@@ -493,6 +494,7 @@ const RULES=[   /* pii_guard.py의 RULES와 정규식이 같아야 함 (tests/te
   ['사업자번호',/(?<!\d)\d{3}-\d{2}-\d{5}(?!\d)/g],
   ['여권번호',/(?<![A-Za-z0-9])[MSROD](?:\d{8}|\d{3}[A-Z]\d{4})(?![A-Za-z0-9])/g],  /* 신형(2021~): M123A4567 */
   ['IP주소',/(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?!\d|\.\d)/g],
+  ['학번·사번',/(?<!\d)(?:19|20)\d{4,8}(?!\d)/g],  /* 학번(2021123456)·사번(20190301): 앞에 '학번·사번' 같은 말이 있을 때만 (skipHit) */
   ['계좌번호',/(?<!\d)(?:\d{2,6}-\d{2,6}-\d{2,8}(?:-\d{1,4})?|\d{10,16})(?!\d)/g],  /* 하이픈 없는 10~16자리는 앞에 계좌 관련 말이 있을 때만 (skipHit) */
   /* 도로명·지번 주소. 시·도와 시·군·구가 둘 다 있으면 그대로, 하나만 있으면 동·층·호(103-405 포함)까지 있어야 함 ("경기 결과로 3배" 같은 오탐 방지) */
   ['주소',/(?<![가-힣])(?:(?:서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충청북|충청남|충북|충남|전라북|전라남|전북|전남|경상북|경상남|경북|경남|제주)(?:특별시|광역시|특별자치시|특별자치도|도|시)?\s+(?:[가-힣]+(?:시|군|구)\s+){1,2}(?:[가-힣]+(?:읍|면)\s+)?[가-힣0-9]+(?:로|길|동|리|가)(?:\s*\d+번?길)?\s*\d+(?:-\d+)?(?:번지)?(?!\d)(?:,?\s*[0-9A-Za-z]+동(?:\s*\d+층)?(?:\s*[0-9A-Za-z-]+호)?|,?\s*\d+층(?:\s*[0-9A-Za-z-]+호)?|,?\s*[0-9A-Za-z-]+호|,?\s*\d{1,4}-\d{1,4}(?![\d-]))?|(?:(?:서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충청북|충청남|충북|충남|전라북|전라남|전북|전남|경상북|경상남|경북|경남|제주)(?:특별시|광역시|특별자치시|특별자치도|도|시)?\s+|(?:[가-힣]+(?:시|군|구)\s+){1,2})(?:[가-힣]+(?:읍|면)\s+)?[가-힣0-9]+(?:로|길|동|리|가)(?:\s*\d+번?길)?\s*\d+(?:-\d+)?(?:번지)?(?!\d)(?:,?\s*[0-9A-Za-z]+동(?:\s*\d+층)?(?:\s*[0-9A-Za-z-]+호)?|,?\s*\d+층(?:\s*[0-9A-Za-z-]+호)?|,?\s*[0-9A-Za-z-]+호|,?\s*\d{1,4}-\d{1,4}(?![\d-])))/g]
@@ -503,7 +505,13 @@ const CATS=RULES.map(r=>r[0]);
 const ACCT_CTX=/(?<!\[)(?:계좌|통장|입금|은행|환불|account)/i;   /* [계좌번호_1] 같은 이름표 안의 말은 빼고 */
 /* 계좌번호 규칙: 날짜(2026-10-21)는 빼고, 하이픈 없는 긴 숫자는 바로 앞 20자 안에 계좌 관련 말이 있을 때만 ("주문번호 12340105678901"은 그대로) */
 const ACCT=RULES.find(r=>r[0]==='계좌번호')[1];   /* 맥락 확인은 이 규칙에만 (표 머리글로 찾은 계좌번호는 그대로 가림) */
-const skipHit=(re,m,s,i)=>re===ACCT&&(/^(19|20)\d{2}-\d{2}-\d{2}$/.test(m)||!m.includes('-')&&!ACCT_CTX.test(s.slice(Math.max(0,i-20),i).replace(/^[^]*[\d\]\uE000-\uE01F]/,'')));   /* 맥락은 바로 앞 숫자·이름표 뒤부터 ("계좌 X / 주문번호 Y"의 Y는 계좌 아님) */
+const ID_CTX=/(?<![\[가-힣·])(?:학번|사번|교번|직번)|(?<!\[)(?:학생|직원)\s*번호/;   /* '검사번호'·이름표 [학번·사번_1] 안의 말은 빼고 */
+const ID=RULES.find(r=>r[0]==='학번·사번')[1];
+const skipHit=(re,m,s,i)=>{
+  if(re!==ACCT&&re!==ID)return false;
+  const ctx=s.slice(Math.max(0,i-20),i).replace(/^[^]*[\d\]\uE000-\uE01F]/,'');
+  return re===ID?!ID_CTX.test(ctx):/^(19|20)\d{2}-\d{2}-\d{2}$/.test(m)||!m.includes('-')&&!ACCT_CTX.test(ctx);
+};   /* 맥락은 바로 앞 숫자·이름표 뒤부터 ("계좌 X / 주문번호 Y"의 Y는 계좌 아님) */
 /* 숫자 셀 앞에 0을 붙여 볼 때는 휴대전화·주민번호만 (250000000원 같은 금액이 전화번호로 가려지지 않게) */
 const ZERO=RULES.filter(([l])=>l==='휴대전화'||l==='주민등록번호').map(([,re])=>new RegExp('^(?:'+re.source+')$'));
 /* 전각 숫자 → 일반 숫자 (글자 수가 같아 위치가 그대로). 검사만 바꾼 글로 하고 결과에는 원래 글자를 씀 */
@@ -545,6 +553,7 @@ function partial(label,m){
   if(label==='지정어'||label==='이름'){const c=[...m];return c.length<=2?c[0]+'*'.repeat(c.length-1):c[0]+'*'.repeat(c.length-2)+c[c.length-1];}
   if(label==='이메일'){const i=m.indexOf('@'),l=m.slice(0,i),k=l.length>2?2:1;return l.slice(0,k)+'*'.repeat(Math.max(1,l.length-k))+m.slice(i);}
   if(label==='IP주소'){const p=m.split('.');return p[0]+'.'+p[1]+'.*.*';}
+  if(label==='학번·사번')return m.slice(0,4)+'*'.repeat(Math.max(0,m.length-4));   /* 앞 4자리(입학·입사 연도)만 남김 */
   if(label==='여권번호')return m[0]+'****'+m.slice(-4);
   if(label==='주소')return m.replace(/\d/g,'*');   /* 지역·도로명은 남기고 번지·동·호수만 가림 */
   if(label==='주민등록번호'){const d=m.replace(/\D/g,''),sep=(m.match(/[- ]/)||[''])[0];return d.slice(0,6)+sep+d[6]+'******';}
@@ -709,14 +718,15 @@ async function maskDocx(buf,M,meta){
 /* 엑셀 표: 같은 열 위쪽 제목 칸이나 바로 왼쪽 칸이 '계좌…'·'성명…'이면 그 칸의 값을 계좌번호·이름으로 봄 (파일 전체에서 가림) */
 const ACCT_H=/계좌|통장|입금|환불|account/i,NAME_H=/성명|이름|예금주|대표자|담당자|신청자|보호자|학생명|고객명|name/i;
 const NOT_NAME=/번호|연락처|전화|주소|메일|생년|일자|날짜|코드/,NOT_VAL=/^(합계|소계|총계|계|비고|없음|해당\s*없음|예|아니오|남|여)$/;
-function headKind(t){t=(t||'').trim();if(!t||t.length>12)return '';if(ACCT_H.test(t))return '계좌번호';if(NAME_H.test(t)&&!NOT_NAME.test(t))return '이름';return '';}
+function headKind(t){t=(t||'').trim();if(!t||t.length>12)return '';if(ACCT_H.test(t))return '계좌번호';if(ID_CTX.test(t))return '학번·사번';if(NAME_H.test(t)&&!NOT_NAME.test(t))return '이름';return '';}
 function tableValues(cells){   /* cells: [{c:열 번호, r:행 번호, t:글자}] (시트 하나) */
-  const at=new Map(cells.map(x=>[x.c+','+x.r,x.t])),head={},out={계좌번호:[],이름:[]};
+  const at=new Map(cells.map(x=>[x.c+','+x.r,x.t])),head={},out={계좌번호:[],'학번·사번':[],이름:[]};
   for(const x of cells){const k=headKind(x.t);if(k&&x.r<=20&&!(head[x.c]&&head[x.c].r<x.r))head[x.c]={k,r:x.r};}   /* 열마다 맨 위 제목 칸 */
   for(const x of cells){
     const t=x.t.trim();
     for(const k of [head[x.c]&&x.r>head[x.c].r?head[x.c].k:'',headKind(at.get((x.c-1)+','+x.r))]){
       if(k==='계좌번호'&&/^[\d\s-]+$/.test(t)&&/^\d{10,16}$/.test(t.replace(/[\s-]/g,'')))out[k].push(t);
+      if(k==='학번·사번'&&/^[A-Za-z0-9-]{4,15}$/.test(t)&&/\d/.test(t))out[k].push(t);
       if(k==='이름'&&!NOT_VAL.test(t)&&!headKind(t)&&/^[가-힣A-Za-z][가-힣A-Za-z .·]{1,19}$/.test(t)&&t.split(/\s+/).length<=4)out[k].push(t);
     }
   }

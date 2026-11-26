@@ -138,18 +138,18 @@ class Web(unittest.TestCase):
         src = ('홍길동님(900101-1234567) 연락처 010-1234-5678, 메일 gildong.hong@example.com\n'
                '서버 IP는 192.168.0.15. 접수 2026-10-21, 버전 1.2.3.4.5\n'
                '환불 계좌 1234-010-567-8901 / 입금 계좌 12340105678901 / 주문번호 12340105678902\n'
-               '주소: 서울시 송파구 한빛로 123, 101동 202호')
+               '주소: 서울시 송파구 한빛로 123, 101동 202호 / 학번 2021123456 / 사번: 20190301 / 수량 2021123457')
         out, msg = self.text(src, words='홍길동')
-        for s in ('홍길동', '900101-1234567', '010-1234-5678', 'gildong', '192.168.0.15', '1234-010-567-8901', '12340105678901', '한빛로 123'):
+        for s in ('홍길동', '900101-1234567', '010-1234-5678', 'gildong', '192.168.0.15', '1234-010-567-8901', '12340105678901', '한빛로 123', '2021123456', '20190301'):
             self.assertNotIn(s, out)
-        for s in ('2026-10-21', '1.2.3.4.5', '주문번호 12340105678902'):
+        for s in ('2026-10-21', '1.2.3.4.5', '주문번호 12340105678902', '수량 2021123457'):
             self.assertIn(s, out)
         self.assertIn('✅ 재검사', msg)
         pg = self.page
         pg.fill('#ans', out); pg.click('#rs')
         self.assertEqual(pg.input_value('#rout'), src)   # 이름표 → 원래 정보
         out, _ = self.text(src, 'partial', '홍길동')
-        for s in ('홍*동', '900101-1******', '010-****-5678', '192.168.*.*.', '1234-***-***-8901', '123*******8901', '한빛로 ***, ***동 ***호'):
+        for s in ('홍*동', '900101-1******', '010-****-5678', '192.168.*.*.', '1234-***-***-8901', '123*******8901', '한빛로 ***, ***동 ***호', '학번 2021******', '사번: 2019****'):
             self.assertIn(s, out)
 
     def test_chip_off_and_formats_table(self):
@@ -171,11 +171,12 @@ class Web(unittest.TestCase):
     def test_web_and_python_agree(self):
         """같은 문장을 웹·파이썬에 넣으면 세 가지 방식 모두 글자 하나까지 같아야 함 (무작위 문장)."""
         rnd = random.Random(20261103)
-        words = ['계좌', '입금', '은행', '주문번호', '연락처', '홍길동', '서울시', '경기도', '송파구', '구리시', '한빛로', '새솔로',
+        words = ['계좌', '입금', '은행', '주문번호', '학번', '사번', '검사번호', '직원 번호', '교직원번호', '연락처', '홍길동', '서울시', '경기도', '송파구', '구리시', '한빛로', '새솔로',
                  '대왕판교로', '번길', '동', '호', '층', 'account', 'kim.yh@example.com', 'M', '+82 ', '(', ')']
         def num():
-            d = ''.join(rnd.choice('0123456789') for _ in range(rnd.choice([1, 2, 3, 4, 4, 6, 7, 10, 11, 13, 14, 16])))
-            return ('01' + rnd.choice('016789') + d[3:]) if rnd.random() < .15 else d
+            d = ''.join(rnd.choice('0123456789') for _ in range(rnd.choice([1, 2, 3, 4, 4, 6, 7, 8, 10, 10, 11, 13, 14, 16])))
+            r = rnd.random()   # 15%는 휴대전화 모양, 15%는 학번·사번 모양(20…)
+            return ('01' + rnd.choice('016789') + d[3:]) if r < .15 else ('20' + d[2:]) if r < .3 and len(d) > 4 else d
         cases = list(dict.fromkeys(''.join((num() if rnd.random() < .5 else rnd.choice(words)) + rnd.choice(['-', '.', ' ', '', ',', '/', ' - '])
                                            for _ in range(rnd.randint(1, 8))) for _ in range(int(os.environ.get('PII_FUZZ', 4000)))))
         web = self.page.evaluate("""xs => xs.map(s => ['token', 'partial', 'star'].map(mode => {
@@ -225,7 +226,7 @@ class Web(unittest.TestCase):
         ws.append(['합계', '', '', '', '', ''])
         ws['F4'].comment = Comment('예비 연락처 010-9876-5432', '작성자')
         ws['F4'].value = '메일'; ws['F4'].hyperlink = 'mailto:kim.yh@example.com'
-        form = wb.create_sheet('양식'); form.append(['예금주', '김영희']); form.append(['입금계좌', '110123456789'])
+        form = wb.create_sheet('양식'); form.append(['예금주', '김영희']); form.append(['입금계좌', '110123456789']); form.append(['학번', 2021123456])
         wb.save(self.p('a.xlsx'))
         with zipfile.ZipFile(self.p('a.xlsx'), 'a') as z:   # 최신 Excel의 스레드 메모
             z.writestr('xl/threadedComments/threadedComment1.xml', '<?xml version="1.0" encoding="UTF-8"?><ThreadedComments '
@@ -240,7 +241,7 @@ class Web(unittest.TestCase):
         self.assertTrue(row3[4].startswith('[휴대전화_') and row4[4].startswith('[주민등록번호_'))   # 앞자리 0이 지워진 번호
         self.assertTrue(str(row3[5]).endswith(' 확인') and '홍길동' not in str(row3[5]))   # 찾은 이름은 다른 칸에서도
         self.assertEqual((s1['A2'].value, s1['A5'].value), ('성명', '합계'))
-        self.assertTrue(str(s2['B1'].value).startswith('[이름_') and str(s2['B2'].value).startswith('[계좌번호_'))
+        self.assertTrue(str(s2['B1'].value).startswith('[이름_') and str(s2['B2'].value).startswith('[계좌번호_') and str(s2['B3'].value).startswith('[학번·사번_'))
         with zipfile.ZipFile(path) as z:
             xml = '\n'.join(z.read(n).decode('utf-8', 'replace') for n in z.namelist() if n.endswith(('.xml', '.rels')))
         for s in ('010-9876-5432', 'kim.yh', 'lee.sj', '홍길동', '12340105678901'):
